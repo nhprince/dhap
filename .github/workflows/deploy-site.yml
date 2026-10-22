@@ -19,20 +19,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Verify site files
+        run: |
+          ls -la apps/site
+          test -f apps/site/index.html
+          test -f apps/site/style.css
+          echo "Showcase website files successfully verified."
+
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@9e0d165f4d1e21b0669ee38b258525b64c0fcfa8 # v3.14.0
-        if: env.CLOUDFLARE_API_TOKEN != ''
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy apps/site --project-name=dhap-studio
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Local Validation Notice
-        if: env.CLOUDFLARE_API_TOKEN == ''
-        run: |
-          echo "Notice: Cloudflare secrets (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID) are not configured yet."
-          echo "Validated apps/site files locally:"
-          ls -la apps/site
