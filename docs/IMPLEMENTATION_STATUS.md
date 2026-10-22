@@ -25,7 +25,9 @@
 | **Documentation & Showcase** | Static website & interactive documentation portal | :white_check_mark: Verified Built | `deploy-site.yml` run 39760622929 passed |
 | **Desktop Studio UI** | React 19, TypeScript studio with step reordering, templates & secret preflight | :white_check_mark: Built & Verified | Verified in CI with recorder modal, annotator & save/load |
 | **Desktop Capture Integration** | Cross-platform screen capture (`gdigrab`/`avfoundation`/`x11grab`) & UI recorder | :white_check_mark: Built & Verified | ScreenRecorder in `dhap-media`, CLI `record`, and studio modal |
-| **MCP Agent Automation** | Model Context Protocol server (`dhap mcp`) over stdio | :white_check_mark: Built & Verified | JSON-RPC 2.0 stdio server in `crates/dhap-cli` |
+| **MCP Agent Automation** | Model Context Protocol server (`dhap mcp`) over stdio | :white_check_mark: Built & Tested | JSON-RPC 2.0 stdio server + integration test `mcp_protocol.rs` |
+| **Interactive Keyboard Stepper** | Accessible client-side stepper with hotkeys (Arrow/j/k, x) and progress tracking | :white_check_mark: Built & Verified | Integrated in responsive HTML exporter |
+| **Project Snapshots & History** | Named project snapshots with timestamped step title arrays | :white_check_mark: Built & Tested | `ProjectSnapshot` in `dhap-core` with backward-compatible Serde |
 
 | **Installer Packages** | Multi-platform MSI, DMG, AppImage packaging | :hourglass_flowing_sand: Planned (Stage 5) | Release workflow target |
 | **Browser Extension** | Web DOM event recorder | :calendar: Deferred (v2.x) | Future milestone |

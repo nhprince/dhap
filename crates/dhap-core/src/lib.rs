@@ -110,4 +110,18 @@ mod tests {
         // Cannot move last item down
         assert!(!proj.move_step_down(&s2));
     }
+
+    #[test]
+    fn test_project_snapshot() {
+        let mut proj = Project::new("Snapshot Test");
+        proj.add_step("Step A", "Do A", None, None);
+        proj.add_step("Step B", "Do B", None, None);
+
+        let snap_id = proj.create_snapshot("Initial Revision");
+        assert_eq!(proj.snapshots.len(), 1);
+        assert_eq!(proj.snapshots[0].id, snap_id);
+        assert_eq!(proj.snapshots[0].label, "Initial Revision");
+        assert_eq!(proj.snapshots[0].step_count, 2);
+        assert_eq!(proj.snapshots[0].titles, vec!["Step A", "Step B"]);
+    }
 }

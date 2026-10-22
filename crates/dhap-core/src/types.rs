@@ -138,6 +138,15 @@ impl Default for ExportSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectSnapshot {
+    pub id: String,
+    pub label: String,
+    pub created_at: DateTime<Utc>,
+    pub step_count: usize,
+    pub titles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Project {
     pub id: ProjectId,
     pub title: String,
@@ -149,6 +158,8 @@ pub struct Project {
     pub frames: Vec<Frame>,
     pub steps: Vec<GuideStep>,
     pub export_settings: ExportSettings,
+    #[serde(default)]
+    pub snapshots: Vec<ProjectSnapshot>,
 }
 
 impl Project {
@@ -165,7 +176,23 @@ impl Project {
             frames: Vec::new(),
             steps: Vec::new(),
             export_settings: ExportSettings::default(),
+            snapshots: Vec::new(),
         }
+    }
+
+    /// Creates a named snapshot of current project step state
+    pub fn create_snapshot(&mut self, label: impl Into<String>) -> String {
+        let snap_id = generate_id("snap");
+        let titles = self.steps.iter().map(|s| s.title.clone()).collect();
+        self.snapshots.push(ProjectSnapshot {
+            id: snap_id.clone(),
+            label: label.into(),
+            created_at: Utc::now(),
+            step_count: self.steps.len(),
+            titles,
+        });
+        self.updated_at = Utc::now();
+        snap_id
     }
 
     pub fn add_step(

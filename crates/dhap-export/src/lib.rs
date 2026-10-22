@@ -741,16 +741,39 @@ impl HtmlExporter {
             }});
         }});
 
-        function closeLightbox() {{
-            document.getElementById('lightbox').classList.remove('active');
+        let currentStepFocus = 1;
+
+        function focusStep(num) {{
+            if (num < 1 || num > totalSteps) return;
+            currentStepFocus = num;
+            const el = document.getElementById('step-' + num);
+            if (el) {{
+                el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                document.querySelectorAll('.step-card').forEach(c => c.style.outline = 'none');
+                el.style.outline = '2px solid var(--primary)';
+            }}
         }}
 
         document.addEventListener('keydown', (e) => {{
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
             if (e.key === 'Escape') closeLightbox();
+            else if (e.key === 'ArrowRight' || e.key === 'j') focusStep(currentStepFocus + 1);
+            else if (e.key === 'ArrowLeft' || e.key === 'k') focusStep(currentStepFocus - 1);
+            else if (e.key === 'x') {{
+                const el = document.getElementById('step-' + currentStepFocus);
+                if (el) {{
+                    const cb = el.querySelector('input[type="checkbox"]');
+                    if (cb) {{
+                        cb.checked = !cb.checked;
+                        toggleStepComplete(cb, currentStepFocus);
+                    }}
+                }}
+            }}
         }});
     </script>
 </body>
 </html>
+
             "#,
             project.title,
             template_badge_html,
