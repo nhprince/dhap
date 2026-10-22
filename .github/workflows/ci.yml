@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-format:
+    name: Format & Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@a54c7fe9360c800460293425c1907935822ca48f # stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417271a0e9f0962304d1 # v2.7.7
+
+      - name: Check code formatting
+        run: cargo fmt --check
+
+      - name: Check Clippy lints
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test-matrix:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@a54c7fe9360c800460293425c1907935822ca48f # stable
+
+      - name: Install FFmpeg (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg-full --yes
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417271a0e9f0962304d1 # v2.7.7
+
+      - name: Run all workspace unit and integration tests
+        run: cargo test --workspace
+
+      - name: Validate sample project via CLI
+        run: cargo run -p dhap-cli -- validate fixtures/sample_guide.dhap
+
+      - name: Test multi-format export via CLI
+        run: cargo run -p dhap-cli -- export fixtures/sample_guide.dhap --format markdown,html --output-dir target/ci_export

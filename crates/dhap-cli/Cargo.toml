@@ -1,0 +1,25 @@
+[package]
+name = "dhap-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "Headless CLI automation tool for Dhap"
+
+[[bin]]
+name = "dhap"
+path = "src/main.rs"
+
+[dependencies]
+dhap-core = { workspace = true }
+dhap-project = { workspace = true }
+dhap-media = { workspace = true }
+dhap-annotation = { workspace = true }
+dhap-export = { workspace = true }
+dhap-ai = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

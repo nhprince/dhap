@@ -1,0 +1,18 @@
+[package]
+name = "dhap-media"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "Video probe, frame extraction, FFmpeg integration, and scene detection"
+
+[dependencies]
+dhap-core = { workspace = true }
+image = { workspace = true }
+tokio = { workspace = true }
+tempfile = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

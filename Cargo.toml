@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dhap-core",
+    "crates/dhap-project",
+    "crates/dhap-media",
+    "crates/dhap-annotation",
+    "crates/dhap-export",
+    "crates/dhap-ai",
+    "crates/dhap-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+authors = ["NH Prince Pradhan <nhprince@users.noreply.github.com>"]
+license = "MIT"
+repository = "https://github.com/nhprince/dhap"
+homepage = "https://github.com/nhprince/dhap"
+readme = "README.md"
+
+[workspace.dependencies]
+dhap-core = { path = "crates/dhap-core", version = "0.1.0" }
+dhap-project = { path = "crates/dhap-project", version = "0.1.0" }
+dhap-media = { path = "crates/dhap-media", version = "0.1.0" }
+dhap-annotation = { path = "crates/dhap-annotation", version = "0.1.0" }
+dhap-export = { path = "crates/dhap-export", version = "0.1.0" }
+dhap-ai = { path = "crates/dhap-ai", version = "0.1.0" }
+
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
+thiserror = "2.0.3"
+uuid = { version = "1.10.0", features = ["v4", "serde"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+tempfile = "3.13.0"
+image = { version = "0.25.2", default-features = false, features = ["png", "jpeg"] }
+zip = { version = "2.2.0", default-features = false, features = ["deflate"] }
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "fs", "process", "io-util"] }
+async-trait = "0.1.83"
+clap = { version = "4.5.20", features = ["derive", "env"] }
+pulldown-cmark = "0.12.2"

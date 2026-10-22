@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" width="400" height="100">
+  <defs>
+    <linearGradient id="dhapGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F97316" />
+      <stop offset="100%" stop-color="#EA580C" />
+    </linearGradient>
+    <linearGradient id="stepGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#334155" />
+    </linearGradient>
+  </defs>
+
+  <!-- Step Icon Symbol -->
+  <g transform="translate(15, 10)">
+    <!-- Base / First Step -->
+    <rect x="0" y="55" width="22" height="25" rx="4" fill="url(#stepGrad)" />
+    <!-- Second Step -->
+    <rect x="22" y="38" width="22" height="42" rx="4" fill="url(#stepGrad)" />
+    <!-- Third Step -->
+    <rect x="44" y="21" width="22" height="59" rx="4" fill="url(#stepGrad)" />
+    <!-- Highlighted Active Step -->
+    <rect x="66" y="4" width="22" height="76" rx="4" fill="url(#dhapGrad)" />
+    
+    <!-- Focus beacon / marker on apex -->
+    <circle cx="77" cy="-2" r="5" fill="#F97316" />
+  </g>
+
+  <!-- Wordmark "Dhap" -->
+  <text x="120" y="66" font-family="system-ui, -apple-system, 'Outfit', 'Inter', sans-serif" font-weight="800" font-size="52" fill="#0F172A" letter-spacing="-1.5">Dhap</text>
+
+  <!-- Bengali script subtitle "ধাপ" -->
+  <text x="268" y="46" font-family="system-ui, -apple-system, sans-serif" font-weight="600" font-size="20" fill="#F97316">ধাপ</text>
+
+  <!-- Tagline -->
+  <text x="122" y="86" font-family="system-ui, -apple-system, 'Inter', sans-serif" font-weight="500" font-size="13" fill="#64748B" letter-spacing="0.5">MAKE THE STEPS CLEAR</text>
+</svg>

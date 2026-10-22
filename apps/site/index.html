@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dhap (ধাপ) — Make the steps clear.</title>
+  <meta name="description" content="Record once. Create the video and guide together. Open-source local-first studio for converting screen recordings into polished, editable documentation." />
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Navigation Header -->
+  <header class="site-header">
+    <div class="container nav-wrap">
+      <a href="#" class="logo-link" aria-label="Dhap Home">
+        <img src="assets/logo.svg" alt="Dhap Logo" />
+      </a>
+      <nav class="main-nav">
+        <a href="#workflow">Workflow</a>
+        <a href="#features">Features</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="https://github.com/nhprince/dhap" target="_blank" rel="noopener noreferrer" class="btn btn-outline">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="container">
+        <span class="badge">Open-Source & Local-First Studio</span>
+        <h1 class="hero-title">Make the steps clear.</h1>
+        <p class="hero-subtitle">
+          <strong>Record once. Create the video and guide together.</strong><br/>
+          Dhap transforms screen recordings and visual workflows into editable, illustrated documentation and media outputs from one unified project.
+        </p>
+        <div class="hero-actions">
+          <a href="#quickstart" class="btn btn-primary">Get Started</a>
+          <a href="https://github.com/nhprince/dhap" target="_blank" rel="noopener noreferrer" class="btn btn-outline">View on GitHub</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workflow Section -->
+    <section class="workflow" id="workflow">
+      <div class="container">
+        <div class="section-head">
+          <h2>One Source of Truth. Four Seamless Steps.</h2>
+          <p>No more taking separate screenshots or duplicating edits across image tools and wikis.</p>
+        </div>
+
+        <div class="workflow-cards">
+          <div class="workflow-card">
+            <div class="step-num">1</div>
+            <h3>Record or Import</h3>
+            <p>Capture your display with native recorders or import common MP4, WebM, and MOV video recordings.</p>
+          </div>
+
+          <div class="workflow-card">
+            <div class="step-num">2</div>
+            <h3>Extract Keyframes</h3>
+            <p>Heuristic scene-detection proposes candidate moments with exact timestamps for your review.</p>
+          </div>
+
+          <div class="workflow-card">
+            <div class="step-num">3</div>
+            <h3>Annotate & Redact</h3>
+            <p>Add callout badges and arrows. Apply irreversible pixel redactions that permanently destroy sensitive data.</p>
+          </div>
+
+          <div class="workflow-card">
+            <div class="step-num">4</div>
+            <h3>Multi-Format Export</h3>
+            <p>Generate clean GitHub-ready Markdown, standalone interactive HTML guides, and PDF documentation.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature Pillars -->
+    <section class="features" id="features">
+      <div class="container">
+        <div class="section-head">
+          <h2>Crafted for Privacy, Velocity, and Control</h2>
+          <p>Built with safe, modern Rust to deliver native performance and reliable exports.</p>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-box">
+            <div class="feature-icon">🛡️</div>
+            <h3>100% Local-First & Offline</h3>
+            <p>No mandatory accounts, subscriptions, or cloud uploads. Your recordings and documentation stay on your machine.</p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-icon">⬛</div>
+            <h3>Irreversible Redaction</h3>
+            <p>Redactions are baked destructively into exported image pixels. Sensitive credentials cannot be recovered via browser DevTools.</p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-icon">⚡</div>
+            <h3>Rust Engine & CLI</h3>
+            <p>Fast frame extraction, schema validation, and multi-format exports powered by safe compiled Rust.</p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-icon">🤖</div>
+            <h3>AI is Strictly Optional</h3>
+            <p>Zero AI dependencies for all core features. When enabled, AI generates suggestions that you review and approve.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quickstart Section -->
+    <section class="features" id="quickstart" style="padding-top: 0;">
+      <div class="container">
+        <div class="section-head">
+          <h2>Quick Start with Dhap CLI</h2>
+          <p>Inspect recordings, validate projects, and export guides in automated pipelines.</p>
+        </div>
+
+        <pre class="code-block"><code># Clone and build the Dhap workspace
+git clone https://github.com/nhprince/dhap.git
+cd dhap
+cargo build --release
+
+# Validate a .dhap project
+./target/release/dhap validate fixtures/sample_guide.dhap
+
+# Export Markdown and Standalone HTML documentation
+./target/release/dhap export fixtures/sample_guide.dhap --format markdown,html --output-dir ./dist_docs</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <p>
+        <strong>Dhap (ধাপ)</strong> — Bengali for <em>step</em> or <em>stage</em> in a journey.<br/>
+        Released as open source under the <a href="https://github.com/nhprince/dhap/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>.
+      </p>
+    </div>
+  </footer>
+
+</body>
+</html>
