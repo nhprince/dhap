@@ -36,7 +36,7 @@ chrono = { version = "0.4.38", features = ["serde"] }
 tempfile = "3.13.0"
 image = { version = "0.25.2", default-features = false, features = ["png", "jpeg"] }
 zip = { version = "2.2.0", default-features = false, features = ["deflate"] }
-tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "fs", "process", "io-util"] }
+tokio = { version = "1.40.0", features = ["rt-multi-thread", "macros", "fs", "process", "io-util", "time", "signal"] }
 async-trait = "0.1.83"
 clap = { version = "4.5.20", features = ["derive", "env"] }
 pulldown-cmark = "0.12.2"

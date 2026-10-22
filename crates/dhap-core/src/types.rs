@@ -91,6 +91,23 @@ pub struct GuideStep {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CaptureMarker {
+    pub timestamp_ms: u64,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CaptureSession {
+    pub id: String,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub duration_ms: u64,
+    pub source_name: String,
+    pub markers: Vec<CaptureMarker>,
+    pub output_file: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SourceMedia {
     pub id: MediaId,
     pub filename: String,

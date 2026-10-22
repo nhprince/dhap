@@ -301,6 +301,7 @@ dependencies = [
 name = "dhap-media"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dhap-core",
  "image",
  "serde",

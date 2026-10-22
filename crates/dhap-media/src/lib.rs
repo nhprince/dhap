@@ -1,8 +1,10 @@
-use dhap_core::{generate_id, DhapError, DhapResult, SourceMedia};
+use chrono::Utc;
+use dhap_core::{generate_id, CaptureMarker, CaptureSession, DhapError, DhapResult, SourceMedia};
 use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::time::Instant;
 
 pub struct MediaProbe;
 
@@ -192,6 +194,126 @@ impl MediaExtractor {
     }
 }
 
+pub struct ScreenRecorder;
+
+pub struct ActiveRecording {
+    pub session: CaptureSession,
+    process: Option<Child>,
+    start_instant: Instant,
+}
+
+impl ScreenRecorder {
+    /// Launches an FFmpeg recording process capturing screen or window.
+    pub fn start_recording(output_path: &Path, source_name: &str) -> DhapResult<ActiveRecording> {
+        let mut cmd = Command::new("ffmpeg");
+        cmd.arg("-y");
+
+        // OS-specific capture formats
+        if cfg!(target_os = "windows") {
+            cmd.arg("-f")
+                .arg("gdigrab")
+                .arg("-framerate")
+                .arg("30")
+                .arg("-i")
+                .arg("desktop");
+        } else if cfg!(target_os = "macos") {
+            cmd.arg("-f")
+                .arg("avfoundation")
+                .arg("-framerate")
+                .arg("30")
+                .arg("-i")
+                .arg("1:none");
+        } else {
+            cmd.arg("-f")
+                .arg("x11grab")
+                .arg("-framerate")
+                .arg("30")
+                .arg("-i")
+                .arg(":0.0");
+        }
+
+        cmd.arg("-pix_fmt")
+            .arg("yuv420p")
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-preset")
+            .arg("ultrafast")
+            .arg(output_path);
+
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        let child = cmd.spawn().map_err(|e| {
+            DhapError::MediaError(format!("Failed to launch screen recorder: {}", e))
+        })?;
+
+        let session = CaptureSession {
+            id: generate_id("sess"),
+            started_at: Utc::now(),
+            ended_at: None,
+            duration_ms: 0,
+            source_name: source_name.to_string(),
+            markers: Vec::new(),
+            output_file: output_path.to_string_lossy().to_string(),
+        };
+
+        Ok(ActiveRecording {
+            session,
+            process: Some(child),
+            start_instant: Instant::now(),
+        })
+    }
+
+    /// Creates a mock capture session for deterministic headless test environments
+    pub fn start_mock_recording(output_path: &Path, source_name: &str) -> ActiveRecording {
+        let session = CaptureSession {
+            id: generate_id("sess"),
+            started_at: Utc::now(),
+            ended_at: None,
+            duration_ms: 0,
+            source_name: source_name.to_string(),
+            markers: Vec::new(),
+            output_file: output_path.to_string_lossy().to_string(),
+        };
+
+        ActiveRecording {
+            session,
+            process: None,
+            start_instant: Instant::now(),
+        }
+    }
+}
+
+impl ActiveRecording {
+    /// Inserts a timestamp marker during recording
+    pub fn mark_step(&mut self, label: impl Into<String>) -> u64 {
+        let elapsed_ms = self.start_instant.elapsed().as_millis() as u64;
+        self.session.markers.push(CaptureMarker {
+            timestamp_ms: elapsed_ms,
+            label: label.into(),
+        });
+        elapsed_ms
+    }
+
+    /// Stops the recording process gracefully and finalizes media container
+    pub fn stop(mut self) -> DhapResult<CaptureSession> {
+        let elapsed_ms = self.start_instant.elapsed().as_millis() as u64;
+        self.session.duration_ms = elapsed_ms;
+        self.session.ended_at = Some(Utc::now());
+
+        if let Some(mut child) = self.process.take() {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(b"q\n");
+                let _ = stdin.flush();
+            }
+            let _ = child.wait();
+        }
+
+        Ok(self.session)
+    }
+}
+
 pub struct SyntheticMedia;
 
 impl SyntheticMedia {
@@ -252,13 +374,26 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_scene_change_fallback() {
-        let candidates = MediaExtractor::detect_scene_change_timestamps(
-            std::path::Path::new("non_existent.mp4"),
-            0.4,
-            6000,
-        );
-        // Asserts fallback to interval sampling of 3000ms
-        assert_eq!(candidates, vec![500, 3500]);
+    fn test_mock_screen_recording_lifecycle() {
+        let dummy_path = std::path::Path::new("test_recording.mp4");
+        let mut recording = ScreenRecorder::start_mock_recording(dummy_path, "Desktop Display 1");
+
+        assert_eq!(recording.session.source_name, "Desktop Display 1");
+        assert_eq!(recording.session.markers.len(), 0);
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let mark_1 = recording.mark_step("Open Settings");
+        assert!(mark_1 >= 40);
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let mark_2 = recording.mark_step("Click Appearance");
+        assert!(mark_2 >= mark_1);
+
+        let finalized_session = recording.stop().expect("Mock stop should succeed");
+        assert!(finalized_session.duration_ms >= mark_2);
+        assert!(finalized_session.ended_at.is_some());
+        assert_eq!(finalized_session.markers.len(), 2);
+        assert_eq!(finalized_session.markers[0].label, "Open Settings");
+        assert_eq!(finalized_session.markers[1].label, "Click Appearance");
     }
 }

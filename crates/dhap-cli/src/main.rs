@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use dhap_core::CURRENT_SCHEMA_VERSION;
 use dhap_export::{HtmlExporter, MarkdownExporter, PreflightValidator};
-use dhap_media::{MediaExtractor, MediaProbe};
+use dhap_media::{MediaExtractor, MediaProbe, ScreenRecorder};
 use dhap_project::ProjectBundle;
 use std::path::PathBuf;
 
@@ -57,6 +57,22 @@ enum Commands {
         /// Destination directory for generated guide
         #[arg(long)]
         output_dir: PathBuf,
+    },
+
+    /// Record screen or window workflow with timeline step markers
+    Record {
+        /// Output video file path
+        #[arg(short, long, default_value = "dhap_recording.mp4")]
+        output: PathBuf,
+        /// Recording duration limit in seconds (0 or omitted = wait for Ctrl+C)
+        #[arg(short, long, default_value_t = 0)]
+        duration: u64,
+        /// Screen or window capture device identifier
+        #[arg(long, default_value = "desktop")]
+        source: String,
+        /// Run in headless mock mode for testing and CI validation
+        #[arg(long)]
+        mock: bool,
     },
 }
 
@@ -151,6 +167,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             println!("Export completed successfully.");
+        }
+        Commands::Record {
+            output,
+            duration,
+            source,
+            mock,
+        } => {
+            println!("--- Dhap Screen Recorder ---");
+            println!("Output path: {}", output.display());
+            println!("Source capture: {}", source);
+
+            if mock {
+                println!("Running in simulated/mock capture mode...");
+                let mut recording = ScreenRecorder::start_mock_recording(&output, &source);
+                println!("Recording started (Session ID: {}).", recording.session.id);
+
+                let wait_duration = if duration > 0 { duration } else { 2 };
+                for sec in 1..=wait_duration {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    let ts = recording.mark_step(format!("Marker at {}s", sec));
+                    println!("  [Step Marked] {}ms - Marker at {}s", ts, sec);
+                }
+
+                let session = recording.stop()?;
+                println!("Recording finished successfully.");
+                println!("Final Duration: {}ms", session.duration_ms);
+                println!("Step Markers: {}", session.markers.len());
+            } else {
+                let recording = ScreenRecorder::start_recording(&output, &source)?;
+                println!("Recording live (Session ID: {})...", recording.session.id);
+                println!("Press Ctrl+C to stop recording and finalize media.");
+
+                if duration > 0 {
+                    tokio::select! {
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(duration)) => {
+                            println!("Duration reached ({}s). Stopping...", duration);
+                        }
+                        _ = tokio::signal::ctrl_c() => {
+                            println!("\nCtrl+C detected. Finalizing recording...");
+                        }
+                    }
+                } else {
+                    let _ = tokio::signal::ctrl_c().await;
+                    println!("\nCtrl+C detected. Finalizing recording...");
+                }
+
+                let session = recording.stop()?;
+                println!("Recording finalized: {}", output.display());
+                println!("Duration: {:.1}s", session.duration_ms as f64 / 1000.0);
+            }
         }
     }
 
