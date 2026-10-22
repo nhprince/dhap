@@ -98,6 +98,7 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [activeTool, setActiveTool] = useState<'select' | 'callout' | 'rectangle' | 'redact'>('select');
   const [showExportModal, setShowExportModal] = useState<boolean>(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<'standard' | 'sop' | 'classroom' | 'github'>('standard');
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
 
   // Recording State
@@ -267,6 +268,52 @@ export default function App() {
     }
   };
 
+  const handleMoveStepUp = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const idx = project.steps.findIndex((s) => s.id === id);
+    if (idx <= 0) return;
+    const nextSteps = [...project.steps];
+    const temp = nextSteps[idx];
+    nextSteps[idx] = nextSteps[idx - 1];
+    nextSteps[idx - 1] = temp;
+    nextSteps.forEach((s, i) => {
+      s.order = i + 1;
+    });
+    setProject((prev) => ({ ...prev, steps: nextSteps }));
+  };
+
+  const handleMoveStepDown = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const idx = project.steps.findIndex((s) => s.id === id);
+    if (idx < 0 || idx >= project.steps.length - 1) return;
+    const nextSteps = [...project.steps];
+    const temp = nextSteps[idx];
+    nextSteps[idx] = nextSteps[idx + 1];
+    nextSteps[idx + 1] = temp;
+    nextSteps.forEach((s, i) => {
+      s.order = i + 1;
+    });
+    setProject((prev) => ({ ...prev, steps: nextSteps }));
+  };
+
+  const detectedSecrets = project.steps.flatMap((step, idx) => {
+    const text = `${step.title} ${step.instruction} ${step.expected_result || ''} ${step.notes || ''}`;
+    const warnings: string[] = [];
+    if (/ghp_[a-zA-Z0-9]{20,}/.test(text) || /github_pat_[a-zA-Z0-9_]{20,}/.test(text)) {
+      warnings.push(`Step ${idx + 1}: GitHub Personal Access Token`);
+    }
+    if (/sk-[a-zA-Z0-9_-]{20,}/.test(text)) {
+      warnings.push(`Step ${idx + 1}: OpenAI / Anthropic API Key`);
+    }
+    if (/AKIA[0-9A-Z]{16}/.test(text)) {
+      warnings.push(`Step ${idx + 1}: AWS Access Key ID`);
+    }
+    if (text.includes('-----BEGIN') && text.includes('PRIVATE KEY-----')) {
+      warnings.push(`Step ${idx + 1}: Private Key Block`);
+    }
+    return warnings;
+  });
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!activeFrame || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
@@ -410,9 +457,31 @@ export default function App() {
                 className={`step-item ${s.id === activeStep.id ? 'active' : ''}`}
                 onClick={() => setActiveStepId(s.id)}
               >
-                <div className="step-item-head">
-                  <span className="step-badge">Step {idx + 1}</span>
-                  <span className="step-title">{s.title}</span>
+                <div className="step-item-head" style={{ justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
+                    <span className="step-badge">Step {idx + 1}</span>
+                    <span className="step-title">{s.title}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '2px' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '0 4px', fontSize: '11px', lineHeight: '18px', height: '20px' }}
+                      title="Move Step Up"
+                      onClick={(e) => handleMoveStepUp(s.id, e)}
+                      disabled={idx === 0}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '0 4px', fontSize: '11px', lineHeight: '18px', height: '20px' }}
+                      title="Move Step Down"
+                      onClick={(e) => handleMoveStepDown(s.id, e)}
+                      disabled={idx === project.steps.length - 1}
+                    >
+                      ↓
+                    </button>
+                  </div>
                 </div>
                 <p className="step-desc-preview">{s.instruction}</p>
                 {s.source_timestamp_ms !== undefined && (
@@ -462,7 +531,25 @@ export default function App() {
           <main className="editor-panel">
             <div className="editor-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <span className="step-badge">Step {activeStep.order}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span className="step-badge">Step {activeStep.order}</span>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.85rem' }}
+                    onClick={(e) => handleMoveStepUp(activeStep.id, e)}
+                    disabled={activeStep.order <= 1}
+                  >
+                    ↑ Move Up
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.85rem' }}
+                    onClick={(e) => handleMoveStepDown(activeStep.id, e)}
+                    disabled={activeStep.order >= project.steps.length}
+                  >
+                    ↓ Move Down
+                  </button>
+                </div>
                 <button
                   className="btn btn-secondary"
                   style={{ color: '#ef4444', borderColor: '#ef4444' }}
@@ -645,13 +732,50 @@ export default function App() {
               Generate reproducible, offline documentation bundles from this project.
             </p>
 
+            <div className="form-group" style={{ marginBottom: '1rem' }}>
+              <label>Export Template Style</label>
+              <select
+                className="form-control"
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value as any)}
+              >
+                <option value="standard">Standard Guide (Interactive Step-by-Step)</option>
+                <option value="sop">SOP / Compliance (Document ID & Sign-off Block)</option>
+                <option value="classroom">Classroom Handout (Exercise Checklist & Quiz)</option>
+                <option value="github">Open Source GitHub README</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                Privacy & Redaction Preflight
+              </div>
+              {detectedSecrets.length > 0 ? (
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '6px', padding: '0.65rem 0.85rem' }}>
+                  <div style={{ color: '#ef4444', fontWeight: 600, fontSize: '0.85rem' }}>
+                    ⚠️ {detectedSecrets.length} Potential Unredacted Credential(s) Detected!
+                  </div>
+                  <ul style={{ fontSize: '0.8rem', color: '#fca5a5', marginTop: '0.35rem', paddingLeft: '1.25rem' }}>
+                    {detectedSecrets.map((sec, idx) => (
+                      <li key={idx}>{sec}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid #22c55e', borderRadius: '6px', padding: '0.6rem 0.85rem', color: '#22c55e', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span>✓</span>
+                  <span><strong>Clean Preflight:</strong> Zero credentials or API keys detected.</span>
+                </div>
+              )}
+            </div>
+
             <div className="export-options">
               <label className="export-option-label">
                 <input type="radio" name="format" defaultChecked />
                 <div>
                   <strong>Markdown + Local Assets</strong>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    GitHub-flavored README.md with relative image links
+                    README.md with relative image links
                   </div>
                 </div>
               </label>

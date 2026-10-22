@@ -205,4 +205,54 @@ impl Project {
     pub fn get_frame_mut(&mut self, frame_id: &str) -> Option<&mut Frame> {
         self.frames.iter_mut().find(|f| f.id == frame_id)
     }
+
+    /// Reorders a step to a new 0-based index and recalibrates all step.order values
+    pub fn reorder_step(&mut self, step_id: &str, new_index: usize) -> bool {
+        let current_pos = match self.steps.iter().position(|s| s.id == step_id) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        if current_pos == new_index || new_index >= self.steps.len() {
+            return false;
+        }
+
+        let step = self.steps.remove(current_pos);
+        self.steps.insert(new_index, step);
+
+        for (idx, s) in self.steps.iter_mut().enumerate() {
+            s.order = idx as u32 + 1;
+        }
+
+        self.updated_at = Utc::now();
+        true
+    }
+
+    /// Moves a step up by one position
+    pub fn move_step_up(&mut self, step_id: &str) -> bool {
+        let pos = match self.steps.iter().position(|s| s.id == step_id) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        if pos == 0 {
+            return false;
+        }
+
+        self.reorder_step(step_id, pos - 1)
+    }
+
+    /// Moves a step down by one position
+    pub fn move_step_down(&mut self, step_id: &str) -> bool {
+        let pos = match self.steps.iter().position(|s| s.id == step_id) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        if pos + 1 >= self.steps.len() {
+            return false;
+        }
+
+        self.reorder_step(step_id, pos + 1)
+    }
 }

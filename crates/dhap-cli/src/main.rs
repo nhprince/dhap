@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use dhap_core::CURRENT_SCHEMA_VERSION;
-use dhap_export::{HtmlExporter, MarkdownExporter, PreflightValidator};
+use dhap_export::{ExportTemplate, HtmlExporter, MarkdownExporter, PreflightValidator};
 use dhap_media::{MediaExtractor, MediaProbe, ScreenRecorder};
 use dhap_project::ProjectBundle;
 use std::path::PathBuf;
@@ -54,6 +54,9 @@ enum Commands {
         /// Export formats comma separated: markdown, html
         #[arg(long, default_value = "markdown,html")]
         format: String,
+        /// Export template style: standard, sop, classroom, github
+        #[arg(long, default_value = "standard")]
+        template: String,
         /// Destination directory for generated guide
         #[arg(long)]
         output_dir: PathBuf,
@@ -74,6 +77,9 @@ enum Commands {
         #[arg(long)]
         mock: bool,
     },
+
+    /// Run Model Context Protocol (MCP) JSON-RPC server over stdio for AI agent workflows
+    Mcp,
 }
 
 #[tokio::main]
@@ -145,20 +151,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Export {
             project_path,
             format,
+            template,
             output_dir,
         } => {
             let (project, frames) = ProjectBundle::load(&project_path)?;
             std::fs::create_dir_all(&output_dir)?;
 
+            let export_template = template
+                .parse::<ExportTemplate>()
+                .unwrap_or(ExportTemplate::StandardGuide);
+
             let formats: Vec<&str> = format.split(',').map(|s| s.trim()).collect();
             for fmt in formats {
                 match fmt {
                     "markdown" | "md" => {
-                        let out = MarkdownExporter::export(&project, &frames, &output_dir)?;
+                        let out = MarkdownExporter::export_with_template(
+                            &project,
+                            &frames,
+                            &output_dir,
+                            export_template,
+                        )?;
                         println!("Exported Markdown: {}", out.display());
                     }
                     "html" => {
-                        let out = HtmlExporter::export(&project, &frames, &output_dir)?;
+                        let out = HtmlExporter::export_with_template(
+                            &project,
+                            &frames,
+                            &output_dir,
+                            export_template,
+                        )?;
                         println!("Exported HTML: {}", out.display());
                     }
                     other => {
@@ -218,6 +239,314 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Duration: {:.1}s", session.duration_ms as f64 / 1000.0);
             }
         }
+        Commands::Mcp => {
+            run_mcp_server().await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_mcp_server() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::{BufRead, Write};
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let parsed: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let id = parsed.get("id").cloned().unwrap_or(serde_json::Value::Null);
+        let method = parsed.get("method").and_then(|m| m.as_str()).unwrap_or("");
+
+        let response = match method {
+            "initialize" => {
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {
+                            "tools": {}
+                        },
+                        "serverInfo": {
+                            "name": "dhap",
+                            "version": env!("CARGO_PKG_VERSION")
+                        }
+                    }
+                })
+            }
+            "notifications/initialized" => continue,
+            "ping" => {
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {}
+                })
+            }
+            "tools/list" => {
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "tools": [
+                            {
+                                "name": "dhap_validate_project",
+                                "description": "Validates a .dhap project bundle for schema compliance and missing assets",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "project_path": { "type": "string", "description": "Absolute path to .dhap project" }
+                                    },
+                                    "required": ["project_path"]
+                                }
+                            },
+                            {
+                                "name": "dhap_inspect_project",
+                                "description": "Inspects and returns metadata, steps, and frames of a .dhap project",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "project_path": { "type": "string", "description": "Absolute path to .dhap project" }
+                                    },
+                                    "required": ["project_path"]
+                                }
+                            },
+                            {
+                                "name": "dhap_scan_secrets",
+                                "description": "Heuristically scans text or project steps for unredacted credentials/tokens",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "text": { "type": "string", "description": "Text content to scan" }
+                                    },
+                                    "required": ["text"]
+                                }
+                            },
+                            {
+                                "name": "dhap_export_guide",
+                                "description": "Exports a .dhap project into HTML or Markdown using a specified template",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "project_path": { "type": "string", "description": "Absolute path to .dhap file" },
+                                        "format": { "type": "string", "description": "markdown, html, or both" },
+                                        "template": { "type": "string", "description": "standard, sop, classroom, github" },
+                                        "output_dir": { "type": "string", "description": "Destination output directory" }
+                                    },
+                                    "required": ["project_path", "output_dir"]
+                                }
+                            }
+                        ]
+                    }
+                })
+            }
+            "tools/call" => {
+                let params = parsed
+                    .get("params")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+                let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let args = params
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
+
+                match tool_name {
+                    "dhap_scan_secrets" => {
+                        let text = args.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                        let detected = PreflightValidator::scan_secrets(text);
+                        let text_res = if detected.is_empty() {
+                            "No unredacted secrets or credentials detected.".to_string()
+                        } else {
+                            format!(
+                                "Found {} potential secret(s):\n{}",
+                                detected.len(),
+                                detected
+                                    .into_iter()
+                                    .map(|(t, s)| format!("- {}: '{}'", t, s))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            )
+                        };
+                        serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": {
+                                "content": [{ "type": "text", "text": text_res }]
+                            }
+                        })
+                    }
+                    "dhap_validate_project" => {
+                        let path_str = args
+                            .get("project_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
+                        match ProjectBundle::load(std::path::Path::new(path_str)) {
+                            Ok((proj, frames)) => {
+                                match PreflightValidator::validate(&proj, &frames) {
+                                    Ok(warnings) => {
+                                        let text_res = if warnings.is_empty() {
+                                            format!("Validation passed for '{}'. 0 warnings, {} steps, {} assets.", proj.title, proj.steps.len(), frames.len())
+                                        } else {
+                                            format!(
+                                                "Validation passed with {} warnings:\n{}",
+                                                warnings.len(),
+                                                warnings
+                                                    .iter()
+                                                    .map(|w| format!("- {}", w))
+                                                    .collect::<Vec<_>>()
+                                                    .join("\n")
+                                            )
+                                        };
+                                        serde_json::json!({
+                                            "jsonrpc": "2.0",
+                                            "id": id,
+                                            "result": { "content": [{ "type": "text", "text": text_res }] }
+                                        })
+                                    }
+                                    Err(e) => {
+                                        serde_json::json!({
+                                            "jsonrpc": "2.0",
+                                            "id": id,
+                                            "result": { "content": [{ "type": "text", "text": format!("Validation failed: {}", e) }], "isError": true }
+                                        })
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": format!("Failed to load project: {}", e) }], "isError": true }
+                                })
+                            }
+                        }
+                    }
+                    "dhap_inspect_project" => {
+                        let path_str = args
+                            .get("project_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
+                        match ProjectBundle::load(std::path::Path::new(path_str)) {
+                            Ok((proj, frames)) => {
+                                let summary = serde_json::json!({
+                                    "id": proj.id,
+                                    "title": proj.title,
+                                    "description": proj.description,
+                                    "step_count": proj.steps.len(),
+                                    "frame_count": frames.len(),
+                                    "steps": proj.steps.iter().map(|s| serde_json::json!({
+                                        "order": s.order,
+                                        "title": s.title,
+                                        "instruction": s.instruction,
+                                        "expected_result": s.expected_result,
+                                        "frame_count": s.frame_ids.len()
+                                    })).collect::<Vec<_>>()
+                                });
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": serde_json::to_string_pretty(&summary).unwrap() }] }
+                                })
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": format!("Failed to inspect project: {}", e) }], "isError": true }
+                                })
+                            }
+                        }
+                    }
+                    "dhap_export_guide" => {
+                        let path_str = args
+                            .get("project_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
+                        let out_dir_str = args
+                            .get("output_dir")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("exports");
+                        let tpl_str = args
+                            .get("template")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("standard");
+                        let fmt_str = args
+                            .get("format")
+                            .and_then(|f| f.as_str())
+                            .unwrap_or("markdown,html");
+
+                        let template = tpl_str
+                            .parse::<ExportTemplate>()
+                            .unwrap_or(ExportTemplate::StandardGuide);
+                        let out_dir = std::path::Path::new(out_dir_str);
+                        let _ = std::fs::create_dir_all(out_dir);
+
+                        match ProjectBundle::load(std::path::Path::new(path_str)) {
+                            Ok((proj, frames)) => {
+                                let mut exported = Vec::new();
+                                if fmt_str.contains("markdown") || fmt_str.contains("md") {
+                                    if let Ok(p) = MarkdownExporter::export_with_template(
+                                        &proj, &frames, out_dir, template,
+                                    ) {
+                                        exported.push(p.display().to_string());
+                                    }
+                                }
+                                if fmt_str.contains("html") {
+                                    if let Ok(p) = HtmlExporter::export_with_template(
+                                        &proj, &frames, out_dir, template,
+                                    ) {
+                                        exported.push(p.display().to_string());
+                                    }
+                                }
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": format!("Exported {} file(s):\n{}", exported.len(), exported.join("\n")) }] }
+                                })
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": format!("Failed to export project: {}", e) }], "isError": true }
+                                })
+                            }
+                        }
+                    }
+                    other => {
+                        serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": { "code": -32601, "message": format!("Tool not found: {}", other) }
+                        })
+                    }
+                }
+            }
+            _ => {
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": { "code": -32601, "message": "Method not found" }
+                })
+            }
+        };
+
+        let resp_str = serde_json::to_string(&response).unwrap();
+        writeln!(stdout, "{}", resp_str)?;
+        stdout.flush()?;
     }
 
     Ok(())

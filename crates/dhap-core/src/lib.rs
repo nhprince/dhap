@@ -79,4 +79,35 @@ mod tests {
         assert_eq!(deserialized.frames[0].annotations.len(), 1);
         assert_eq!(deserialized.frames[0].redactions.len(), 1);
     }
+
+    #[test]
+    fn test_step_reordering() {
+        let mut proj = Project::new("Reorder Test");
+        let s1 = proj.add_step("Step 1", "First", None, None);
+        let s2 = proj.add_step("Step 2", "Second", None, None);
+        let s3 = proj.add_step("Step 3", "Third", None, None);
+
+        assert_eq!(proj.steps[0].id, s1);
+        assert_eq!(proj.steps[1].id, s2);
+        assert_eq!(proj.steps[2].id, s3);
+
+        // Move s3 up
+        assert!(proj.move_step_up(&s3));
+        assert_eq!(proj.steps[1].id, s3);
+        assert_eq!(proj.steps[1].order, 2);
+        assert_eq!(proj.steps[2].id, s2);
+        assert_eq!(proj.steps[2].order, 3);
+
+        // Move s1 down
+        assert!(proj.move_step_down(&s1));
+        assert_eq!(proj.steps[0].id, s3);
+        assert_eq!(proj.steps[0].order, 1);
+        assert_eq!(proj.steps[1].id, s1);
+        assert_eq!(proj.steps[1].order, 2);
+
+        // Cannot move first item up
+        assert!(!proj.move_step_up(&s3));
+        // Cannot move last item down
+        assert!(!proj.move_step_down(&s2));
+    }
 }
