@@ -21,8 +21,9 @@
 | **dhap-export** | Markdown with local assets, standalone HTML with stepper | :white_check_mark: Built & Tested | Golden fixture tests in `crates/dhap-export` |
 | **dhap-ai** | `AiProvider` trait, `MockAiProvider`, consent disclosure | :white_check_mark: Built & Tested | Async tests in `crates/dhap-ai` |
 | **dhap-cli** | CLI tool (`probe`, `validate`, `export`, `version`) | :white_check_mark: Built & Tested | End-to-end CLI tests in `crates/dhap-cli` |
-| **Automation CI/CD** | Pinned GitHub Actions (`ci.yml`, `release.yml`, `deploy-site.yml`) | :white_check_mark: Verified Green | Run 39760981884 passed across Windows, macOS, Linux |
+| **Automation CI/CD** | Pinned GitHub Actions (`ci.yml`, `release.yml`, `deploy-site.yml`) | :white_check_mark: Verified Green | Run 39765967767 passed across macOS, Windows, Linux & Desktop UI |
 | **Documentation & Showcase** | Static website & interactive documentation portal | :white_check_mark: Verified Built | `deploy-site.yml` run 39760622929 passed |
+| **Desktop Studio UI** | React 19, TypeScript, Vite desktop studio (`apps/desktop`) | :white_check_mark: Built & Verified | Verified in CI with switchable layouts & annotator |
 | **Desktop Capture Integration** | Native display capture via OpenScreen adapter | :hourglass_flowing_sand: Planned (Stage 4) | Roadmap item |
 | **Installer Packages** | Multi-platform MSI, DMG, AppImage packaging | :hourglass_flowing_sand: Planned (Stage 5) | Release workflow target |
 | **Browser Extension** | Web DOM event recorder | :calendar: Deferred (v2.x) | Future milestone |
