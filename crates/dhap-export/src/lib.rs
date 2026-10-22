@@ -197,6 +197,16 @@ impl HtmlExporter {
                         <span class="step-badge">Step {}</span>
                         <h2>{}</h2>
                     </header>
+                    <div class="step-actions">
+                        <button class="copy-btn" onclick="copyStepText(this, '{}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            Copy Instruction
+                        </button>
+                        <label class="check-done">
+                            <input type="checkbox" onchange="toggleStepComplete(this, {})" />
+                            Mark step completed
+                        </label>
+                    </div>
                     <p class="step-instruction">{}</p>
                     {}
                     {}
@@ -206,6 +216,8 @@ impl HtmlExporter {
                 step_num,
                 step_num,
                 step.title,
+                step.instruction.replace('"', "&quot;").replace('\n', " "),
+                step_num,
                 step.instruction,
                 images_html,
                 expected_html,
@@ -222,24 +234,25 @@ impl HtmlExporter {
     <title>{} - Dhap Guide</title>
     <style>
         :root {{
-            --bg: #0f172a;
-            --surface: #1e293b;
-            --border: #334155;
+            --bg: #0b0f19;
+            --surface: #131b2e;
+            --surface-hover: #1e293b;
+            --border: #23334d;
             --text: #f8fafc;
             --text-muted: #94a3b8;
             --primary: #f97316;
             --primary-hover: #ea580c;
+            --accent-green: #22c55e;
             --radius: 12px;
             --font: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, sans-serif;
         }}
-        @media (prefers-color-scheme: light) {{
-            :root {{
-                --bg: #f8fafc;
-                --surface: #ffffff;
-                --border: #e2e8f0;
-                --text: #0f172a;
-                --text-muted: #64748b;
-            }}
+        [data-theme="light"] {{
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --surface-hover: #f1f5f9;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --text-muted: #64748b;
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
@@ -247,11 +260,63 @@ impl HtmlExporter {
             color: var(--text);
             font-family: var(--font);
             line-height: 1.6;
-            padding: 2rem 1rem;
+            padding-bottom: 5rem;
+            transition: background 0.2s ease, color 0.2s ease;
+        }}
+        /* Top Navigation Bar */
+        .top-bar {{
+            position: sticky;
+            top: 0;
+            background: rgba(11, 15, 25, 0.88);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+            padding: 0.75rem 1rem;
+        }}
+        [data-theme="light"] .top-bar {{
+            background: rgba(248, 250, 252, 0.88);
+        }}
+        .top-bar-inner {{
+            max-width: 860px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }}
+        .progress-info {{
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }}
+        .progress-bar-wrap {{
+            flex: 1;
+            height: 6px;
+            background: var(--border);
+            border-radius: 999px;
+            overflow: hidden;
+            margin: 0 1rem;
+        }}
+        .progress-bar-fill {{
+            height: 100%;
+            background: var(--primary);
+            width: 0%;
+            transition: width 0.25s ease;
+        }}
+        .theme-btn {{
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
         }}
         .container {{
             max-width: 860px;
-            margin: 0 auto;
+            margin: 2rem auto 0;
+            padding: 0 1rem;
         }}
         header.guide-title-block {{
             margin-bottom: 2.5rem;
@@ -274,12 +339,16 @@ impl HtmlExporter {
             padding: 1.75rem;
             margin-bottom: 2rem;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            transition: border-color 0.2s ease, opacity 0.2s ease;
+        }}
+        .step-card.completed {{
+            border-color: var(--accent-green);
         }}
         .step-header {{
             display: flex;
             align-items: center;
             gap: 0.75rem;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
         }}
         .step-badge {{
             background: var(--primary);
@@ -289,9 +358,47 @@ impl HtmlExporter {
             font-size: 0.85rem;
             font-weight: 700;
         }}
+        .step-card.completed .step-badge {{
+            background: var(--accent-green);
+        }}
         .step-header h2 {{
             font-size: 1.35rem;
             font-weight: 700;
+        }}
+        .step-actions {{
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }}
+        .copy-btn {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 0.3rem 0.65rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }}
+        .copy-btn:hover {{
+            background: var(--surface-hover);
+            color: var(--text);
+        }}
+        .check-done {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            cursor: pointer;
+            user-select: none;
+        }}
+        .check-done input {{
+            cursor: pointer;
+            accent-color: var(--accent-green);
         }}
         .step-instruction {{
             font-size: 1.05rem;
@@ -302,11 +409,17 @@ impl HtmlExporter {
             border-radius: 8px;
             overflow: hidden;
             border: 1px solid var(--border);
+            cursor: zoom-in;
+            background: #000;
         }}
         .frame-container img {{
             width: 100%;
             height: auto;
             display: block;
+            transition: transform 0.2s ease;
+        }}
+        .frame-container:hover img {{
+            transform: scale(1.005);
         }}
         .callout {{
             padding: 0.875rem 1rem;
@@ -316,7 +429,7 @@ impl HtmlExporter {
         }}
         .callout.expected {{
             background: rgba(34, 197, 94, 0.1);
-            border-left: 4px solid #22c55e;
+            border-left: 4px solid var(--accent-green);
         }}
         .callout.note {{
             background: rgba(249, 115, 22, 0.1);
@@ -330,20 +443,53 @@ impl HtmlExporter {
             padding-top: 1.5rem;
             border-top: 1px solid var(--border);
         }}
+        /* Lightbox Modal */
+        .lightbox {{
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            cursor: zoom-out;
+            padding: 1.5rem;
+        }}
+        .lightbox.active {{
+            display: flex;
+        }}
+        .lightbox img {{
+            max-width: 90vw;
+            max-height: 90vh;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }}
         @media print {{
-            body {{ background: white; color: black; }}
-            .step-card {{ break-inside: avoid; border: 1px solid #ccc; box-shadow: none; }}
+            .top-bar, .step-actions, .theme-btn {{ display: none !important; }}
+            body {{ background: white !important; color: black !important; padding: 0 !important; }}
+            .step-card {{ break-inside: avoid; border: 1px solid #ccc !important; box-shadow: none !important; margin-bottom: 2rem; }}
         }}
     </style>
 </head>
 <body>
+    <div class="top-bar">
+        <div class="top-bar-inner">
+            <span class="progress-info" id="progressText">Progress: 0%</span>
+            <div class="progress-bar-wrap">
+                <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+            <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">Light Mode</button>
+        </div>
+    </div>
+
     <div class="container">
         <header class="guide-title-block">
             <h1>{}</h1>
             <p>{}</p>
         </header>
 
-        <main>
+        <main id="stepsMain">
             {}
         </main>
 
@@ -351,6 +497,66 @@ impl HtmlExporter {
             <p>Made with <strong>Dhap (ধাপ)</strong> • Make the steps clear.</p>
         </footer>
     </div>
+
+    <!-- Image Lightbox Modal -->
+    <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+        <img id="lightboxImg" src="" alt="Enlarged screenshot" />
+    </div>
+
+    <script>
+        const totalSteps = {};
+        let completedSteps = new Set();
+
+        function toggleStepComplete(checkbox, stepNum) {{
+            const card = document.getElementById('step-' + stepNum);
+            if (checkbox.checked) {{
+                completedSteps.add(stepNum);
+                card.classList.add('completed');
+            }} else {{
+                completedSteps.delete(stepNum);
+                card.classList.remove('completed');
+            }}
+            updateProgress();
+        }}
+
+        function updateProgress() {{
+            const pct = Math.round((completedSteps.size / totalSteps) * 100);
+            document.getElementById('progressBar').style.width = pct + '%';
+            document.getElementById('progressText').textContent = completedSteps.size + ' of ' + totalSteps + ' completed (' + pct + '%)';
+        }}
+
+        function copyStepText(btn, text) {{
+            navigator.clipboard.writeText(text).then(() => {{
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<span>✓ Copied!</span>';
+                setTimeout(() => {{ btn.innerHTML = originalText; }}, 1800);
+            }});
+        }}
+
+        function toggleTheme() {{
+            const current = document.body.getAttribute('data-theme');
+            const target = current === 'light' ? 'dark' : 'light';
+            document.body.setAttribute('data-theme', target);
+            document.getElementById('themeBtn').textContent = target === 'light' ? 'Dark Mode' : 'Light Mode';
+        }}
+
+        // Setup Lightbox for screenshots
+        document.querySelectorAll('.frame-container img').forEach(img => {{
+            img.addEventListener('click', (e) => {{
+                e.stopPropagation();
+                document.getElementById('lightboxImg').src = img.src;
+                document.getElementById('lightbox').classList.add('active');
+            }});
+        }});
+
+        function closeLightbox() {{
+            document.getElementById('lightbox').classList.remove('active');
+        }}
+
+        document.addEventListener('keydown', (e) => {{
+            if (e.key === 'Escape') closeLightbox();
+        }});
+    </script>
 </body>
 </html>
             "#,
@@ -360,7 +566,8 @@ impl HtmlExporter {
                 .description
                 .as_deref()
                 .unwrap_or("A step-by-step walkthrough created with Dhap."),
-            steps_html
+            steps_html,
+            project.steps.len()
         );
 
         let output_file = output_dir.join("index.html");

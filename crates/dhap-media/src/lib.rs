@@ -126,6 +126,57 @@ impl MediaExtractor {
         }
     }
 
+    /// Uses FFmpeg scene change detection filter to find key visual transitions.
+    /// Falls back to interval sampling if scene filter returns fewer than 2 candidates.
+    pub fn detect_scene_change_timestamps(
+        video_path: &Path,
+        threshold: f64,
+        duration_ms: u64,
+    ) -> Vec<u64> {
+        let thresh = threshold.clamp(0.1, 0.9);
+        let filter_arg = format!("select='gt(scene,{})',showinfo", thresh);
+
+        let output = Command::new("ffmpeg")
+            .arg("-i")
+            .arg(video_path)
+            .arg("-filter:v")
+            .arg(&filter_arg)
+            .arg("-f")
+            .arg("null")
+            .arg("-")
+            .output();
+
+        let mut timestamps = Vec::new();
+
+        if let Ok(out) = output {
+            let stderr_str = String::from_utf8_lossy(&out.stderr);
+            for line in stderr_str.lines() {
+                if line.contains("pts_time:") {
+                    if let Some(pos) = line.find("pts_time:") {
+                        let sub = &line[pos + 9..];
+                        let num_str: String = sub
+                            .chars()
+                            .take_while(|c| c.is_ascii_digit() || *c == '.')
+                            .collect();
+                        if let Ok(secs) = num_str.parse::<f64>() {
+                            let ms = (secs * 1000.0) as u64;
+                            if ms > 0 && ms < duration_ms && !timestamps.contains(&ms) {
+                                timestamps.push(ms);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if timestamps.len() < 2 {
+            // Fallback to interval sampling
+            Self::suggest_candidate_timestamps(duration_ms, 3000)
+        } else {
+            timestamps
+        }
+    }
+
     /// Suggest candidate keyframe timestamps using uniform interval or scene heuristic
     pub fn suggest_candidate_timestamps(duration_ms: u64, interval_ms: u64) -> Vec<u64> {
         let mut candidates = Vec::new();
@@ -198,5 +249,16 @@ mod tests {
     fn test_candidate_timestamp_generation() {
         let candidates = MediaExtractor::suggest_candidate_timestamps(5000, 1000);
         assert_eq!(candidates, vec![500, 1500, 2500, 3500, 4500]);
+    }
+
+    #[test]
+    fn test_detect_scene_change_fallback() {
+        let candidates = MediaExtractor::detect_scene_change_timestamps(
+            std::path::Path::new("non_existent.mp4"),
+            0.4,
+            6000,
+        );
+        // Asserts fallback to interval sampling of 3000ms
+        assert_eq!(candidates, vec![500, 3500]);
     }
 }
