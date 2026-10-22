@@ -1,6 +1,4 @@
-use dhap_core::{
-    Annotation, AnnotationKind, Frame, Project, Rect, Redaction, RedactionStyle,
-};
+use dhap_core::{Annotation, AnnotationKind, Frame, Project, Rect, Redaction, RedactionStyle};
 use dhap_media::SyntheticMedia;
 use dhap_project::ProjectBundle;
 use std::collections::HashMap;
@@ -26,8 +24,10 @@ fn generate_repo_sample_fixture() {
     let frame2_id = "frame_01H002".to_string();
     let frame2_rel = "frames/frame_02.png".to_string();
 
-    let img1 = SyntheticMedia::generate_test_image(800, 500, "1. Terminal Setup", [15, 23, 42, 255]);
-    let img2 = SyntheticMedia::generate_test_image(800, 500, "2. Cloud Dashboard", [30, 41, 59, 255]);
+    let img1 =
+        SyntheticMedia::generate_test_image(800, 500, "1. Terminal Setup", [15, 23, 42, 255]);
+    let img2 =
+        SyntheticMedia::generate_test_image(800, 500, "2. Cloud Dashboard", [30, 41, 59, 255]);
 
     let mut raw_frames = HashMap::new();
     raw_frames.insert(frame1_rel.clone(), img1);
