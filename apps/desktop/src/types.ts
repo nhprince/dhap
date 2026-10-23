@@ -51,6 +51,27 @@ export interface Frame {
 
 export type StepStatus = 'draft' | 'reviewed' | 'approved';
 
+export type ActionVerb =
+  | 'click'
+  | 'type'
+  | 'select'
+  | 'verify'
+  | 'navigate'
+  | 'shortcut'
+  | 'command'
+  | 'wait';
+
+export interface CodeSnippet {
+  language: string;
+  code: string;
+}
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  completed?: boolean;
+}
+
 export interface GuideStep {
   id: StepId;
   order: number;
@@ -61,6 +82,10 @@ export interface GuideStep {
   frame_ids: FrameId[];
   source_timestamp_ms?: number;
   status: StepStatus;
+  action_kind?: ActionVerb;
+  code_snippet?: CodeSnippet;
+  checklist?: ChecklistItem[];
+  tags?: string[];
 }
 
 export interface SourceMedia {
@@ -80,6 +105,14 @@ export interface ExportSettings {
   output_dir: string;
 }
 
+export interface ProjectSnapshot {
+  id: string;
+  label: string;
+  created_at: string;
+  step_count: number;
+  titles: string[];
+}
+
 export interface Project {
   id: ProjectId;
   title: string;
@@ -91,6 +124,7 @@ export interface Project {
   frames: Frame[];
   steps: GuideStep[];
   export_settings: ExportSettings;
+  snapshots?: ProjectSnapshot[];
 }
 
-export type LayoutMode = 'guide' | 'timeline' | 'preview';
+export type LayoutMode = 'guide' | 'timeline' | 'preview' | 'presentation';

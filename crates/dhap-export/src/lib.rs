@@ -1,5 +1,6 @@
 use dhap_annotation::AnnotationRenderer;
-use dhap_core::{DhapError, DhapResult, Project};
+use dhap_core::{ActionKind, DhapError, DhapResult, Project};
+use dhap_media::AnimatedWalkthroughExporter;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -365,6 +366,43 @@ impl HtmlExporter {
                 }
             }
 
+            let action_badge_html = match &step.action_kind {
+                Some(ActionKind::Click) => {
+                    r#"<span class="action-pill action-click">👆 CLICK</span>"#
+                }
+                Some(ActionKind::Command) => {
+                    r#"<span class="action-pill action-command">💻 COMMAND</span>"#
+                }
+                Some(ActionKind::Verify) => {
+                    r#"<span class="action-pill action-verify">🔍 VERIFY</span>"#
+                }
+                Some(ActionKind::Type) => {
+                    r#"<span class="action-pill action-type">⌨️ INPUT</span>"#
+                }
+                Some(ActionKind::Navigate) => {
+                    r#"<span class="action-pill action-navigate">🌐 NAVIGATE</span>"#
+                }
+                Some(ActionKind::KeyShortcut) => {
+                    r#"<span class="action-pill action-shortcut">⚡ SHORTCUT</span>"#
+                }
+                Some(ActionKind::Select) => {
+                    r#"<span class="action-pill action-select">📋 SELECT</span>"#
+                }
+                Some(ActionKind::Wait) => r#"<span class="action-pill action-wait">⏳ WAIT</span>"#,
+                Some(ActionKind::Custom(_c)) => "",
+                None => "",
+            };
+
+            let code_html = match &step.code_snippet {
+                Some(cs) => format!(
+                    r#"<div class="code-container"><div class="code-header"><span>{}</span><button class="code-copy-btn" onclick="copySnippet(this, '{}')">Copy</button></div><pre><code>{}</code></pre></div>"#,
+                    cs.language,
+                    cs.code.replace('"', "&quot;").replace('\n', "\\n"),
+                    cs.code.replace('<', "&lt;").replace('>', "&gt;")
+                ),
+                None => String::new(),
+            };
+
             let expected_html = match &step.expected_result {
                 Some(exp) => format!(
                     r#"<div class="callout expected"><strong>Expected Result:</strong> {}</div>"#,
@@ -381,20 +419,43 @@ impl HtmlExporter {
                 None => String::new(),
             };
 
+            let tags_str = step.tags.join(" ");
+            let search_corpus = format!(
+                "{} {} {} {} {}",
+                step.title,
+                step.instruction,
+                step.expected_result.as_deref().unwrap_or(""),
+                step.notes.as_deref().unwrap_or(""),
+                tags_str
+            )
+            .to_lowercase()
+            .replace('"', "&quot;");
+
+            let escaped_speech = format!("{}. {}", step.title, step.instruction)
+                .replace('"', "&quot;")
+                .replace('\'', "\\'")
+                .replace('\n', " ");
+
             steps_html.push_str(&format!(
                 r#"
-                <article class="step-card" id="step-{}">
+                <article class="step-card" id="step-{}" data-search="{}">
                     <header class="step-header">
-                        <span class="step-badge">Step {}</span>
-                        <h2>{}</h2>
+                        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                            <span class="step-badge">Step {}</span>
+                            {}
+                            <h2>{}</h2>
+                        </div>
                     </header>
                     <div class="step-actions">
                         <button class="copy-btn" onclick="copyStepText(this, '{}')">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                             Copy Instruction
                         </button>
+                        <button class="copy-btn" onclick="speakStep(this, '{}')">
+                            🔊 Read Aloud
+                        </button>
                         <label class="check-done">
-                            <input type="checkbox" onchange="toggleStepComplete(this, {})" />
+                            <input type="checkbox" data-step="{}" onchange="toggleStepComplete(this, {})" />
                             Mark step completed
                         </label>
                     </div>
@@ -402,14 +463,20 @@ impl HtmlExporter {
                     {}
                     {}
                     {}
+                    {}
                 </article>
                 "#,
                 step_num,
+                search_corpus,
                 step_num,
+                action_badge_html,
                 step.title,
                 step.instruction.replace('"', "&quot;").replace('\n', " "),
+                escaped_speech,
+                step_num,
                 step_num,
                 step.instruction,
+                code_html,
                 images_html,
                 expected_html,
                 notes_html
@@ -458,35 +525,55 @@ impl HtmlExporter {
         .top-bar {{
             position: sticky;
             top: 0;
-            background: rgba(11, 15, 25, 0.88);
+            background: rgba(11, 15, 25, 0.92);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--border);
             z-index: 100;
-            padding: 0.75rem 1rem;
+            padding: 0.65rem 1rem;
         }}
         [data-theme="light"] .top-bar {{
-            background: rgba(248, 250, 252, 0.88);
+            background: rgba(248, 250, 252, 0.92);
         }}
         .top-bar-inner {{
-            max-width: 860px;
+            max-width: 900px;
             margin: 0 auto;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 1rem;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }}
+        .search-wrap {{
+            flex: 1;
+            min-width: 180px;
+        }}
+        .search-input {{
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.35rem 0.75rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            outline: none;
+        }}
+        .search-input:focus {{
+            border-color: var(--primary);
         }}
         .progress-info {{
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             font-weight: 600;
             color: var(--text-muted);
+            white-space: nowrap;
         }}
         .progress-bar-wrap {{
             flex: 1;
+            min-width: 120px;
             height: 6px;
             background: var(--border);
             border-radius: 999px;
             overflow: hidden;
-            margin: 0 1rem;
+            margin: 0 0.5rem;
         }}
         .progress-bar-fill {{
             height: 100%;
@@ -494,23 +581,29 @@ impl HtmlExporter {
             width: 0%;
             transition: width 0.25s ease;
         }}
-        .theme-btn {{
+        .nav-btn {{
             background: var(--surface);
             border: 1px solid var(--border);
             color: var(--text);
-            padding: 0.4rem 0.8rem;
+            padding: 0.35rem 0.7rem;
             border-radius: 8px;
             cursor: pointer;
-            font-size: 0.85rem;
+            font-size: 0.82rem;
             font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }}
+        .nav-btn:hover {{
+            background: var(--surface-hover);
         }}
         .container {{
-            max-width: 860px;
+            max-width: 900px;
             margin: 2rem auto 0;
             padding: 0 1rem;
         }}
         header.guide-title-block {{
-            margin-bottom: 2.5rem;
+            margin-bottom: 2rem;
             text-align: center;
         }}
         header.guide-title-block h1 {{
@@ -523,6 +616,16 @@ impl HtmlExporter {
             color: var(--text-muted);
             font-size: 1.1rem;
         }}
+        .celebration-banner {{
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
+            border: 2px solid var(--accent-green);
+            color: var(--accent-green);
+            padding: 1rem 1.25rem;
+            border-radius: var(--radius);
+            margin-bottom: 2rem;
+            text-align: center;
+            font-size: 1rem;
+        }}
         .step-card {{
             background: var(--surface);
             border: 1px solid var(--border);
@@ -534,6 +637,9 @@ impl HtmlExporter {
         }}
         .step-card.completed {{
             border-color: var(--accent-green);
+        }}
+        .step-card.hidden {{
+            display: none !important;
         }}
         .step-header {{
             display: flex;
@@ -552,6 +658,59 @@ impl HtmlExporter {
         .step-card.completed .step-badge {{
             background: var(--accent-green);
         }}
+        .action-pill {{
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            padding: 0.2rem 0.55rem;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }}
+        .action-click {{ background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); }}
+        .action-command {{ background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.4); }}
+        .action-verify {{ background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }}
+        .action-type {{ background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }}
+        .action-navigate {{ background: rgba(14, 165, 233, 0.2); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.4); }}
+        .action-shortcut {{ background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }}
+        .action-select {{ background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4); }}
+        .action-wait {{ background: rgba(100, 116, 139, 0.2); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.4); }}
+
+        .code-container {{
+            background: #0f172a;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 1rem 0;
+            overflow: hidden;
+        }}
+        .code-header {{
+            background: #1e293b;
+            padding: 0.35rem 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 700;
+        }}
+        .code-copy-btn {{
+            background: none;
+            border: 1px solid #334155;
+            color: #cbd5e1;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.7rem;
+        }}
+        .code-copy-btn:hover {{ background: #334155; color: #fff; }}
+        .code-container pre {{
+            padding: 0.85rem 1rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.9rem;
+            color: #38bdf8;
+            overflow-x: auto;
+        }}
+
         .step-header h2 {{
             font-size: 1.35rem;
             font-weight: 700;
@@ -559,10 +718,11 @@ impl HtmlExporter {
         .step-actions {{
             display: flex;
             align-items: center;
-            gap: 1.25rem;
+            gap: 1rem;
             margin-bottom: 1rem;
             font-size: 0.85rem;
             color: var(--text-muted);
+            flex-wrap: wrap;
         }}
         .copy-btn {{
             display: inline-flex;
@@ -656,8 +816,30 @@ impl HtmlExporter {
             border-radius: 8px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.5);
         }}
+        /* Slideshow Presentation Mode */
+        body.slides-active .top-bar {{
+            background: #000;
+        }}
+        body.slides-active .step-card {{
+            display: none;
+        }}
+        body.slides-active .step-card.active-slide {{
+            display: block !important;
+            min-height: 60vh;
+            border: 2px solid var(--primary);
+        }}
+        .slide-controls {{
+            display: none;
+            justify-content: center;
+            align-items: center;
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }}
+        body.slides-active .slide-controls {{
+            display: flex;
+        }}
         @media print {{
-            .top-bar, .step-actions, .theme-btn {{ display: none !important; }}
+            .top-bar, .step-actions, .nav-btn, .search-wrap, .slide-controls {{ display: none !important; }}
             body {{ background: white !important; color: black !important; padding: 0 !important; }}
             .step-card {{ break-inside: avoid; border: 1px solid #ccc !important; box-shadow: none !important; margin-bottom: 2rem; }}
         }}
@@ -670,11 +852,19 @@ impl HtmlExporter {
             <div class="progress-bar-wrap">
                 <div class="progress-bar-fill" id="progressBar"></div>
             </div>
-            <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">Light Mode</button>
+            <div class="search-wrap">
+                <input type="search" id="stepSearch" class="search-input" placeholder="🔍 Filter steps..." oninput="filterSteps(this.value)" />
+            </div>
+            <button class="nav-btn" onclick="togglePresentation()" id="slidesBtn">📺 Slides</button>
+            <button class="nav-btn" onclick="toggleTheme()" id="themeBtn">Light Mode</button>
         </div>
     </div>
 
     <div class="container">
+        <div id="celebrationBanner" class="celebration-banner" style="display: none;">
+            🎉 <strong>All Steps Completed!</strong> Guide verified and saved to local progress.
+        </div>
+
         {}
         <header class="guide-title-block">
             <h1>{}</h1>
@@ -684,6 +874,12 @@ impl HtmlExporter {
         <main id="stepsMain">
             {}
         </main>
+
+        <div class="slide-controls">
+            <button class="nav-btn" onclick="focusStep(currentStepFocus - 1)">◀ Previous</button>
+            <span id="slideIndicator" style="font-weight: 700;">Slide 1 of {}</span>
+            <button class="nav-btn" onclick="focusStep(currentStepFocus + 1)">Next ▶</button>
+        </div>
 
         <footer class="guide-footer">
             <p>Made with <strong>Dhap (ধাপ)</strong> • Make the steps clear.</p>
@@ -697,7 +893,29 @@ impl HtmlExporter {
 
     <script>
         const totalSteps = {};
+        const storageKey = 'dhap_progress_' + '{}';
         let completedSteps = new Set();
+        let isSlidesMode = false;
+        let currentStepFocus = 1;
+
+        // Restore saved progress
+        try {{
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {{
+                const arr = JSON.parse(saved);
+                arr.forEach(num => {{
+                    completedSteps.add(num);
+                    const card = document.getElementById('step-' + num);
+                    if (card) {{
+                        card.classList.add('completed');
+                        const cb = card.querySelector('input[type="checkbox"]');
+                        if (cb) cb.checked = true;
+                    }}
+                }});
+            }}
+        }} catch(e) {{}}
+
+        updateProgress();
 
         function toggleStepComplete(checkbox, stepNum) {{
             const card = document.getElementById('step-' + stepNum);
@@ -708,6 +926,9 @@ impl HtmlExporter {
                 completedSteps.delete(stepNum);
                 card.classList.remove('completed');
             }}
+            try {{
+                localStorage.setItem(storageKey, JSON.stringify(Array.from(completedSteps)));
+            }} catch(e) {{}}
             updateProgress();
         }}
 
@@ -715,6 +936,12 @@ impl HtmlExporter {
             const pct = Math.round((completedSteps.size / totalSteps) * 100);
             document.getElementById('progressBar').style.width = pct + '%';
             document.getElementById('progressText').textContent = completedSteps.size + ' of ' + totalSteps + ' completed (' + pct + '%)';
+            const banner = document.getElementById('celebrationBanner');
+            if (completedSteps.size === totalSteps && totalSteps > 0) {{
+                banner.style.display = 'block';
+            }} else {{
+                banner.style.display = 'none';
+            }}
         }}
 
         function copyStepText(btn, text) {{
@@ -723,6 +950,81 @@ impl HtmlExporter {
                 btn.innerHTML = '<span>✓ Copied!</span>';
                 setTimeout(() => {{ btn.innerHTML = originalText; }}, 1800);
             }});
+        }}
+
+        function copySnippet(btn, code) {{
+            navigator.clipboard.writeText(code).then(() => {{
+                const orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => {{ btn.textContent = orig; }}, 1600);
+            }});
+        }}
+
+        function speakStep(btn, text) {{
+            if (!('speechSynthesis' in window)) {{
+                alert('Web Speech API is not supported in this browser.');
+                return;
+            }}
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            btn.textContent = '🔊 Speaking...';
+            utterance.onend = () => {{ btn.textContent = '🔊 Read Aloud'; }};
+            utterance.onerror = () => {{ btn.textContent = '🔊 Read Aloud'; }};
+            window.speechSynthesis.speak(utterance);
+        }}
+
+        function filterSteps(query) {{
+            const q = query.trim().toLowerCase();
+            document.querySelectorAll('.step-card').forEach(card => {{
+                if (!q) {{
+                    card.classList.remove('hidden');
+                }} else {{
+                    const corpus = card.getAttribute('data-search') || '';
+                    if (corpus.includes(q)) {{
+                        card.classList.remove('hidden');
+                    }} else {{
+                        card.classList.add('hidden');
+                    }}
+                }}
+            }});
+        }}
+
+        function togglePresentation() {{
+            isSlidesMode = !isSlidesMode;
+            document.body.classList.toggle('slides-active', isSlidesMode);
+            const btn = document.getElementById('slidesBtn');
+            btn.textContent = isSlidesMode ? '📄 Full View' : '📺 Slides';
+            if (isSlidesMode) {{
+                focusStep(currentStepFocus);
+            }} else {{
+                document.querySelectorAll('.step-card').forEach(c => {{
+                    c.classList.remove('active-slide');
+                    c.style.outline = 'none';
+                }});
+            }}
+        }}
+
+        function focusStep(num) {{
+            if (num < 1 || num > totalSteps) return;
+            currentStepFocus = num;
+            document.getElementById('slideIndicator').textContent = 'Slide ' + num + ' of ' + totalSteps;
+
+            document.querySelectorAll('.step-card').forEach(c => {{
+                c.classList.remove('active-slide');
+                c.style.outline = 'none';
+            }});
+
+            const el = document.getElementById('step-' + num);
+            if (el) {{
+                if (isSlidesMode) {{
+                    el.classList.add('active-slide');
+                    el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                }} else {{
+                    el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                    el.style.outline = '2px solid var(--primary)';
+                }}
+            }}
         }}
 
         function toggleTheme() {{
@@ -741,17 +1043,8 @@ impl HtmlExporter {
             }});
         }});
 
-        let currentStepFocus = 1;
-
-        function focusStep(num) {{
-            if (num < 1 || num > totalSteps) return;
-            currentStepFocus = num;
-            const el = document.getElementById('step-' + num);
-            if (el) {{
-                el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                document.querySelectorAll('.step-card').forEach(c => c.style.outline = 'none');
-                el.style.outline = '2px solid var(--primary)';
-            }}
+        function closeLightbox() {{
+            document.getElementById('lightbox').classList.remove('active');
         }}
 
         document.addEventListener('keydown', (e) => {{
@@ -759,6 +1052,7 @@ impl HtmlExporter {
             if (e.key === 'Escape') closeLightbox();
             else if (e.key === 'ArrowRight' || e.key === 'j') focusStep(currentStepFocus + 1);
             else if (e.key === 'ArrowLeft' || e.key === 'k') focusStep(currentStepFocus - 1);
+            else if (e.key === 'p' || e.key === 'P') togglePresentation();
             else if (e.key === 'x') {{
                 const el = document.getElementById('step-' + currentStepFocus);
                 if (el) {{
@@ -773,7 +1067,6 @@ impl HtmlExporter {
     </script>
 </body>
 </html>
-
             "#,
             project.title,
             template_badge_html,
@@ -783,12 +1076,76 @@ impl HtmlExporter {
                 .as_deref()
                 .unwrap_or("A step-by-step walkthrough created with Dhap."),
             steps_html,
-            project.steps.len()
+            project.steps.len(),
+            project.steps.len(),
+            project.id
         );
 
         let output_file = output_dir.join("index.html");
         fs::write(&output_file, full_html)?;
 
+        Ok(output_file)
+    }
+}
+
+pub struct JsonExporter;
+
+impl JsonExporter {
+    /// Exports the entire project, step metadata, and rich analytics as structured JSON
+    pub fn export(project: &Project, output_dir: &Path) -> DhapResult<PathBuf> {
+        fs::create_dir_all(output_dir)?;
+        let stats = project.statistics();
+        let payload = serde_json::json!({
+            "project": project,
+            "statistics": stats,
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+            "schema_version": project.schema_version,
+        });
+
+        let output_file = output_dir.join("guide.json");
+        fs::write(&output_file, serde_json::to_string_pretty(&payload)?)?;
+        Ok(output_file)
+    }
+}
+
+pub struct WalkthroughGifExporter;
+
+impl WalkthroughGifExporter {
+    /// Exports an animated demonstration GIF walkthrough from baked step frames
+    pub fn export(
+        project: &Project,
+        raw_frames: &HashMap<String, Vec<u8>>,
+        output_dir: &Path,
+        delay_ms: u32,
+    ) -> DhapResult<PathBuf> {
+        PreflightValidator::validate(project, raw_frames)?;
+        let assets_dir = output_dir.join("assets");
+        fs::create_dir_all(&assets_dir)?;
+
+        let mut processed_frames = Vec::new();
+        for step in &project.steps {
+            for fid in &step.frame_ids {
+                if let Some(frame) = project.get_frame(fid) {
+                    if let Some(raw_bytes) = raw_frames.get(&frame.relative_path) {
+                        let baked = AnnotationRenderer::process_image_bytes(
+                            raw_bytes,
+                            &frame.annotations,
+                            &frame.redactions,
+                        )?;
+                        processed_frames.push(baked);
+                    }
+                }
+            }
+        }
+
+        if processed_frames.is_empty() {
+            return Err(DhapError::ExportPreflightFailed(
+                "Project contains no frames to export as GIF".to_string(),
+            ));
+        }
+
+        let output_file = assets_dir.join("walkthrough.gif");
+        AnimatedWalkthroughExporter::export_gif(&processed_frames, delay_ms, &output_file)?;
         Ok(output_file)
     }
 }
@@ -934,5 +1291,20 @@ mod tests {
         let html_content = fs::read_to_string(&html_file).unwrap();
         assert!(html_content.contains("Quickstart Tutorial - Dhap Guide"));
         assert!(html_content.contains("Run git init to start."));
+
+        // Export JSON
+        let json_dir = temp_dir.path().join("json_out");
+        let json_file = JsonExporter::export(&project, &json_dir).unwrap();
+        assert!(json_file.exists());
+        let json_content = fs::read_to_string(&json_file).unwrap();
+        assert!(json_content.contains("Quickstart Tutorial"));
+        assert!(json_content.contains("statistics"));
+
+        // Export Walkthrough GIF
+        let gif_dir = temp_dir.path().join("gif_out");
+        let gif_file =
+            WalkthroughGifExporter::export(&project, &raw_frames, &gif_dir, 500).unwrap();
+        assert!(gif_file.exists());
+        assert!(gif_file.extension().unwrap() == "gif");
     }
 }

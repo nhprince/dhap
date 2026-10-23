@@ -1,6 +1,10 @@
 use clap::{Parser, Subcommand};
+use dhap_ai::GuideSummarizer;
 use dhap_core::CURRENT_SCHEMA_VERSION;
-use dhap_export::{ExportTemplate, HtmlExporter, MarkdownExporter, PreflightValidator};
+use dhap_export::{
+    ExportTemplate, HtmlExporter, JsonExporter, MarkdownExporter, PreflightValidator,
+    WalkthroughGifExporter,
+};
 use dhap_media::{MediaExtractor, MediaProbe, ScreenRecorder};
 use dhap_project::ProjectBundle;
 use std::path::PathBuf;
@@ -76,6 +80,47 @@ enum Commands {
         /// Run in headless mock mode for testing and CI validation
         #[arg(long)]
         mock: bool,
+    },
+
+    /// Compare two .dhap projects and display structured workflow differences
+    Diff {
+        /// Base/original project bundle
+        base: PathBuf,
+        /// Target/updated project bundle
+        target: PathBuf,
+        /// Output formatted JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Display project metrics, words, reading time, and asset counts
+    Stats {
+        /// Path to .dhap project file
+        project_path: PathBuf,
+        /// Output formatted JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate AI executive summary, prerequisites, and suggested tags
+    Summarize {
+        /// Path to .dhap project file
+        project_path: PathBuf,
+        /// Output formatted JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Generate an animated demonstration GIF walkthrough from baked step frames
+    Gif {
+        /// Path to .dhap project file
+        project_path: PathBuf,
+        /// Destination GIF file path
+        #[arg(short, long, default_value = "walkthrough.gif")]
+        output: PathBuf,
+        /// Frame delay in milliseconds
+        #[arg(long, default_value_t = 1500)]
+        delay_ms: u32,
     },
 
     /// Run Model Context Protocol (MCP) JSON-RPC server over stdio for AI agent workflows
@@ -182,12 +227,126 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         )?;
                         println!("Exported HTML: {}", out.display());
                     }
+                    "json" => {
+                        let out = JsonExporter::export(&project, &output_dir)?;
+                        println!("Exported JSON: {}", out.display());
+                    }
+                    "gif" => {
+                        let out =
+                            WalkthroughGifExporter::export(&project, &frames, &output_dir, 1500)?;
+                        println!("Exported Walkthrough GIF: {}", out.display());
+                    }
                     other => {
                         eprintln!("Unknown export format: {}", other);
                     }
                 }
             }
             println!("Export completed successfully.");
+        }
+        Commands::Diff { base, target, json } => {
+            let (proj_base, _) = ProjectBundle::load(&base)?;
+            let (proj_target, _) = ProjectBundle::load(&target)?;
+            let diff = proj_base.compute_diff(&proj_target);
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&diff)?);
+            } else {
+                println!("=== Dhap Workflow Diff ===");
+                println!(
+                    "Base:   {} ({} steps)",
+                    proj_base.title,
+                    proj_base.steps.len()
+                );
+                println!(
+                    "Target: {} ({} steps)",
+                    proj_target.title,
+                    proj_target.steps.len()
+                );
+                println!("Summary: {}", diff.summary);
+                println!();
+
+                if !diff.added_steps.is_empty() {
+                    println!("Added Steps ({}):", diff.added_steps.len());
+                    for s in &diff.added_steps {
+                        println!("  + [Step {}] {}", s.order, s.title);
+                    }
+                }
+
+                if !diff.removed_steps.is_empty() {
+                    println!("Removed Steps ({}):", diff.removed_steps.len());
+                    for s in &diff.removed_steps {
+                        println!("  - [Step {}] {}", s.order, s.title);
+                    }
+                }
+
+                if !diff.modified_steps.is_empty() {
+                    println!("Modified Steps ({}):", diff.modified_steps.len());
+                    for m in &diff.modified_steps {
+                        println!(
+                            "  ~ Step '{}' -> '{}' (instruction changed: {}, frame changed: {})",
+                            m.title_before.as_deref().unwrap_or("?"),
+                            m.title_after.as_deref().unwrap_or("?"),
+                            m.instruction_changed,
+                            m.frame_changed
+                        );
+                    }
+                }
+            }
+        }
+        Commands::Stats { project_path, json } => {
+            let (project, frames) = ProjectBundle::load(&project_path)?;
+            let stats = project.statistics();
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&stats)?);
+            } else {
+                println!("=== Dhap Project Statistics ===");
+                println!("Title: {}", project.title);
+                println!("Total Steps: {}", stats.step_count);
+                println!("Packaged Asset Frames: {}", frames.len());
+                println!("Vector Annotations: {}", stats.annotation_count);
+                println!("Irreversible Redactions: {}", stats.redaction_count);
+                println!("Total Words: {}", stats.total_words);
+                println!(
+                    "Estimated Reading Time: ~{} min",
+                    stats.estimated_reading_time_mins
+                );
+                println!(
+                    "Timeline Duration: {:.1}s",
+                    stats.total_duration_ms as f64 / 1000.0
+                );
+            }
+        }
+        Commands::Summarize { project_path, json } => {
+            let (project, _) = ProjectBundle::load(&project_path)?;
+            let summary = GuideSummarizer::summarize(&project);
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&summary)?);
+            } else {
+                println!("=== Dhap Guide Summary ===");
+                println!("Title: {}", project.title);
+                println!("\nExecutive Summary:\n{}", summary.executive_summary);
+                println!("\nPrerequisites:");
+                for p in &summary.prerequisites {
+                    println!("  • {}", p);
+                }
+                println!("\nSuggested Tags: {}", summary.suggested_tags.join(", "));
+                println!("Estimated Duration: {} mins", summary.estimated_minutes);
+            }
+        }
+        Commands::Gif {
+            project_path,
+            output,
+            delay_ms,
+        } => {
+            let (project, frames) = ProjectBundle::load(&project_path)?;
+            let parent_dir = output.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let gif_path = WalkthroughGifExporter::export(&project, &frames, parent_dir, delay_ms)?;
+            if gif_path != output && output.parent().is_some() {
+                let _ = std::fs::rename(&gif_path, &output);
+            }
+            println!("Exported walkthrough GIF: {}", output.display());
         }
         Commands::Record {
             output,
@@ -346,6 +505,53 @@ async fn run_mcp_server() -> Result<(), Box<dyn std::error::Error>> {
                                         "output_dir": { "type": "string", "description": "Destination output directory" }
                                     },
                                     "required": ["project_path", "output_dir"]
+                                }
+                            },
+                            {
+                                "name": "dhap_project_stats",
+                                "description": "Returns comprehensive statistics, word count, estimated reading time, and asset counts for a .dhap project",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "project_path": { "type": "string", "description": "Absolute path to .dhap project" }
+                                    },
+                                    "required": ["project_path"]
+                                }
+                            },
+                            {
+                                "name": "dhap_diff_projects",
+                                "description": "Compares two .dhap projects and generates a structured diff report of added, removed, and modified steps",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "base_project_path": { "type": "string", "description": "Path to base .dhap file" },
+                                        "target_project_path": { "type": "string", "description": "Path to target .dhap file" }
+                                    },
+                                    "required": ["base_project_path", "target_project_path"]
+                                }
+                            },
+                            {
+                                "name": "dhap_summarize_project",
+                                "description": "Generates executive summary, prerequisites, and suggested tags for a .dhap project",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "project_path": { "type": "string", "description": "Absolute path to .dhap project" }
+                                    },
+                                    "required": ["project_path"]
+                                }
+                            },
+                            {
+                                "name": "dhap_generate_gif",
+                                "description": "Generates an animated demonstration GIF walkthrough from baked step frames",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "project_path": { "type": "string", "description": "Absolute path to .dhap project" },
+                                        "output_path": { "type": "string", "description": "Destination GIF file path" },
+                                        "delay_ms": { "type": "integer", "description": "Delay per frame in milliseconds (default 1500)" }
+                                    },
+                                    "required": ["project_path", "output_path"]
                                 }
                             }
                         ]
@@ -522,6 +728,145 @@ async fn run_mcp_server() -> Result<(), Box<dyn std::error::Error>> {
                                     "jsonrpc": "2.0",
                                     "id": id,
                                     "result": { "content": [{ "type": "text", "text": format!("Failed to export project: {}", e) }], "isError": true }
+                                })
+                            }
+                        }
+                    }
+                    "dhap_project_stats" => {
+                        let path_str = args
+                            .get("project_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
+                        match ProjectBundle::load(std::path::Path::new(path_str)) {
+                            Ok((proj, frames)) => {
+                                let stats = proj.statistics();
+                                let out = serde_json::json!({
+                                    "title": proj.title,
+                                    "step_count": stats.step_count,
+                                    "frame_count": frames.len(),
+                                    "annotation_count": stats.annotation_count,
+                                    "redaction_count": stats.redaction_count,
+                                    "total_words": stats.total_words,
+                                    "estimated_reading_time_mins": stats.estimated_reading_time_mins,
+                                    "total_duration_ms": stats.total_duration_ms
+                                });
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": serde_json::to_string_pretty(&out).unwrap() }] }
+                                })
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": format!("Failed to get project stats: {}", e) }], "isError": true }
+                                })
+                            }
+                        }
+                    }
+                    "dhap_diff_projects" => {
+                        let base_path = args
+                            .get("base_project_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
+                        let target_path = args
+                            .get("target_project_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
+
+                        match (
+                            ProjectBundle::load(std::path::Path::new(base_path)),
+                            ProjectBundle::load(std::path::Path::new(target_path)),
+                        ) {
+                            (Ok((base_proj, _)), Ok((target_proj, _))) => {
+                                let diff = base_proj.compute_diff(&target_proj);
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": serde_json::to_string_pretty(&diff).unwrap() }] }
+                                })
+                            }
+                            (Err(e), _) | (_, Err(e)) => {
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": format!("Failed to load project for diff: {}", e) }], "isError": true }
+                                })
+                            }
+                        }
+                    }
+                    "dhap_summarize_project" => {
+                        let path_str = args
+                            .get("project_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
+                        match ProjectBundle::load(std::path::Path::new(path_str)) {
+                            Ok((proj, _)) => {
+                                let summary = GuideSummarizer::summarize(&proj);
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": serde_json::to_string_pretty(&summary).unwrap() }] }
+                                })
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": format!("Failed to summarize project: {}", e) }], "isError": true }
+                                })
+                            }
+                        }
+                    }
+                    "dhap_generate_gif" => {
+                        let path_str = args
+                            .get("project_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("");
+                        let out_str = args
+                            .get("output_path")
+                            .and_then(|p| p.as_str())
+                            .unwrap_or("walkthrough.gif");
+                        let delay_ms = args
+                            .get("delay_ms")
+                            .and_then(|d| d.as_u64())
+                            .unwrap_or(1500) as u32;
+
+                        let out_path = std::path::Path::new(out_str);
+                        let parent_dir = out_path
+                            .parent()
+                            .unwrap_or_else(|| std::path::Path::new("."));
+
+                        match ProjectBundle::load(std::path::Path::new(path_str)) {
+                            Ok((proj, frames)) => {
+                                match WalkthroughGifExporter::export(
+                                    &proj, &frames, parent_dir, delay_ms,
+                                ) {
+                                    Ok(gif_path) => {
+                                        if gif_path != out_path && out_path.parent().is_some() {
+                                            let _ = std::fs::rename(&gif_path, out_path);
+                                        }
+                                        serde_json::json!({
+                                            "jsonrpc": "2.0",
+                                            "id": id,
+                                            "result": { "content": [{ "type": "text", "text": format!("Generated walkthrough GIF: {}", out_path.display()) }] }
+                                        })
+                                    }
+                                    Err(e) => {
+                                        serde_json::json!({
+                                            "jsonrpc": "2.0",
+                                            "id": id,
+                                            "result": { "content": [{ "type": "text", "text": format!("Failed to generate GIF: {}", e) }], "isError": true }
+                                        })
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": { "content": [{ "type": "text", "text": format!("Failed to load project: {}", e) }], "isError": true }
                                 })
                             }
                         }

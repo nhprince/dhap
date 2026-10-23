@@ -79,6 +79,10 @@ fn test_mcp_protocol_lifecycle() {
     assert!(tool_names.contains(&"dhap_inspect_project"));
     assert!(tool_names.contains(&"dhap_scan_secrets"));
     assert!(tool_names.contains(&"dhap_export_guide"));
+    assert!(tool_names.contains(&"dhap_project_stats"));
+    assert!(tool_names.contains(&"dhap_diff_projects"));
+    assert!(tool_names.contains(&"dhap_summarize_project"));
+    assert!(tool_names.contains(&"dhap_generate_gif"));
 
     // 4. tools/call: dhap_scan_secrets with clean text
     let clean_call = serde_json::json!({

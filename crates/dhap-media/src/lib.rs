@@ -354,6 +354,188 @@ impl SyntheticMedia {
     }
 }
 
+pub struct AnimatedWalkthroughExporter;
+
+impl AnimatedWalkthroughExporter {
+    /// Generates an animated GIF from a sequence of image frames.
+    /// Uses pure Rust image::codecs::gif with Repeat::Infinite for 100% offline self-containment,
+    /// or FFmpeg high-fidelity palettegen when available.
+    pub fn export_gif(
+        frame_bytes: &[Vec<u8>],
+        delay_ms: u32,
+        output_path: &Path,
+    ) -> DhapResult<std::path::PathBuf> {
+        if frame_bytes.is_empty() {
+            return Err(DhapError::MediaError(
+                "Cannot create animated GIF from zero frames".to_string(),
+            ));
+        }
+
+        // Try FFmpeg first for palettegen quality if possible
+        if let Ok(path) = Self::try_ffmpeg_gif(frame_bytes, delay_ms, output_path) {
+            return Ok(path);
+        }
+
+        // Pure Rust fallback with image::codecs::gif
+        Self::pure_rust_gif(frame_bytes, delay_ms, output_path)
+    }
+
+    /// Generates a looping animated WebP from image frames using FFmpeg
+    pub fn export_webp(
+        frame_bytes: &[Vec<u8>],
+        delay_ms: u32,
+        output_path: &Path,
+    ) -> DhapResult<std::path::PathBuf> {
+        if frame_bytes.is_empty() {
+            return Err(DhapError::MediaError(
+                "Cannot create animated WebP from zero frames".to_string(),
+            ));
+        }
+
+        let temp_dir = tempfile::tempdir()?;
+        for (i, bytes) in frame_bytes.iter().enumerate() {
+            let p = temp_dir.path().join(format!("frame_{:04}.png", i + 1));
+            std::fs::write(&p, bytes)?;
+        }
+
+        let fps = (1000.0 / (delay_ms.max(100) as f64)).clamp(0.1, 30.0);
+        let input_pattern = temp_dir.path().join("frame_%04d.png");
+
+        let status = Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-framerate")
+            .arg(format!("{:.2}", fps))
+            .arg("-i")
+            .arg(&input_pattern)
+            .arg("-c:v")
+            .arg("libwebp")
+            .arg("-loop")
+            .arg("0")
+            .arg("-lossless")
+            .arg("0")
+            .arg("-q:v")
+            .arg("85")
+            .arg(output_path)
+            .output();
+
+        match status {
+            Ok(out) if out.status.success() => Ok(output_path.to_path_buf()),
+            _ => Err(DhapError::MediaError(
+                "FFmpeg libwebp encoder failed or not available".to_string(),
+            )),
+        }
+    }
+
+    /// Generates a concise MP4 video montage from image frames
+    pub fn export_mp4_montage(
+        frame_bytes: &[Vec<u8>],
+        seconds_per_frame: f64,
+        output_path: &Path,
+    ) -> DhapResult<std::path::PathBuf> {
+        if frame_bytes.is_empty() {
+            return Err(DhapError::MediaError(
+                "Cannot create MP4 montage from zero frames".to_string(),
+            ));
+        }
+
+        let temp_dir = tempfile::tempdir()?;
+        for (i, bytes) in frame_bytes.iter().enumerate() {
+            let p = temp_dir.path().join(format!("frame_{:04}.png", i + 1));
+            std::fs::write(&p, bytes)?;
+        }
+
+        let fps = (1.0 / seconds_per_frame.max(0.2)).clamp(0.1, 10.0);
+        let input_pattern = temp_dir.path().join("frame_%04d.png");
+
+        let status = Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-framerate")
+            .arg(format!("{:.2}", fps))
+            .arg("-i")
+            .arg(&input_pattern)
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-pix_fmt")
+            .arg("yuv420p")
+            .arg("-r")
+            .arg("30")
+            .arg(output_path)
+            .output();
+
+        match status {
+            Ok(out) if out.status.success() => Ok(output_path.to_path_buf()),
+            _ => Err(DhapError::MediaError(
+                "FFmpeg MP4 export failed or not available".to_string(),
+            )),
+        }
+    }
+
+    fn try_ffmpeg_gif(
+        frame_bytes: &[Vec<u8>],
+        delay_ms: u32,
+        output_path: &Path,
+    ) -> DhapResult<std::path::PathBuf> {
+        let temp_dir = tempfile::tempdir()?;
+        for (i, bytes) in frame_bytes.iter().enumerate() {
+            let p = temp_dir.path().join(format!("frame_{:04}.png", i + 1));
+            std::fs::write(&p, bytes)?;
+        }
+
+        let fps = (1000.0 / (delay_ms.max(100) as f64)).clamp(0.1, 30.0);
+        let input_pattern = temp_dir.path().join("frame_%04d.png");
+
+        let status = Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-framerate")
+            .arg(format!("{:.2}", fps))
+            .arg("-i")
+            .arg(&input_pattern)
+            .arg("-vf")
+            .arg("split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
+            .arg("-loop")
+            .arg("0")
+            .arg(output_path)
+            .output();
+
+        match status {
+            Ok(out) if out.status.success() => Ok(output_path.to_path_buf()),
+            _ => Err(DhapError::MediaError(
+                "FFmpeg palettegen failed".to_string(),
+            )),
+        }
+    }
+
+    fn pure_rust_gif(
+        frame_bytes: &[Vec<u8>],
+        delay_ms: u32,
+        output_path: &Path,
+    ) -> DhapResult<std::path::PathBuf> {
+        use image::codecs::gif::{GifEncoder, Repeat};
+        use image::{Delay, Frame as ImgFrame};
+
+        let file = std::fs::File::create(output_path)?;
+        let mut encoder = GifEncoder::new(file);
+        encoder
+            .set_repeat(Repeat::Infinite)
+            .map_err(|e| DhapError::MediaError(format!("Failed to set GIF repeat mode: {}", e)))?;
+
+        let delay = Delay::from_numer_denom_ms(delay_ms.max(100), 1);
+
+        for (idx, bytes) in frame_bytes.iter().enumerate() {
+            let img = image::load_from_memory(bytes).map_err(|e| {
+                DhapError::MediaError(format!("Failed to decode frame {} for GIF: {}", idx, e))
+            })?;
+            let rgba = img.to_rgba8();
+            let frame = ImgFrame::from_parts(rgba, 0, 0, delay);
+            encoder.encode_frame(frame).map_err(|e| {
+                DhapError::MediaError(format!("Failed to encode GIF frame {}: {}", idx, e))
+            })?;
+        }
+
+        Ok(output_path.to_path_buf())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,5 +577,22 @@ mod tests {
         assert_eq!(finalized_session.markers.len(), 2);
         assert_eq!(finalized_session.markers[0].label, "Open Settings");
         assert_eq!(finalized_session.markers[1].label, "Click Appearance");
+    }
+
+    #[test]
+    fn test_animated_walkthrough_gif_export() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let frame1 = SyntheticMedia::generate_test_image(320, 240, "Step 1", [20, 30, 50, 255]);
+        let frame2 = SyntheticMedia::generate_test_image(320, 240, "Step 2", [50, 20, 30, 255]);
+
+        let gif_path = temp_dir.path().join("walkthrough.gif");
+        let result = AnimatedWalkthroughExporter::export_gif(&[frame1, frame2], 500, &gif_path);
+        assert!(
+            result.is_ok(),
+            "GIF export must succeed: {:?}",
+            result.err()
+        );
+        assert!(gif_path.exists());
+        assert!(std::fs::metadata(&gif_path).unwrap().len() > 100);
     }
 }

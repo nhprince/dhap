@@ -124,4 +124,65 @@ mod tests {
         assert_eq!(proj.snapshots[0].step_count, 2);
         assert_eq!(proj.snapshots[0].titles, vec!["Step A", "Step B"]);
     }
+
+    #[test]
+    fn test_project_diff_and_statistics() {
+        let mut proj1 = Project::new("Version 1");
+        let s1 = proj1.add_step(
+            "Open Terminal",
+            "Launch your favorite shell",
+            None,
+            Some(1000),
+        );
+        let _s2 = proj1.add_step("Run Build", "Execute cargo build", None, Some(2000));
+
+        let stats = proj1.statistics();
+        assert_eq!(stats.step_count, 2);
+        assert!(stats.total_words > 0);
+        assert_eq!(stats.total_duration_ms, 2000);
+
+        let mut proj2 = proj1.clone();
+        proj2.id = generate_id("proj");
+        // Modify step 1
+        proj2.steps[0].instruction = "Launch PowerShell as administrator".to_string();
+        // Remove step 2
+        proj2.steps.retain(|s| s.id == s1);
+        // Add step 3
+        proj2.add_step(
+            "Verify Output",
+            "Check target/release folder",
+            None,
+            Some(3500),
+        );
+
+        let diff = proj1.compute_diff(&proj2);
+        assert_eq!(diff.added_steps.len(), 1);
+        assert_eq!(diff.removed_steps.len(), 1);
+        assert_eq!(diff.modified_steps.len(), 1);
+        assert_eq!(diff.total_steps_before, 2);
+        assert_eq!(diff.total_steps_after, 2);
+        assert!(diff.summary.contains("+1 added, -1 removed, ~1 modified"));
+    }
+
+    #[test]
+    fn test_search_steps() {
+        let mut proj = Project::new("Search Test");
+        let s1_id = proj.add_step("Configure AWS", "Set your access key", None, None);
+        let _s2_id = proj.add_step("Deploy Cluster", "Run terraform apply", None, None);
+
+        // Add a tag to s1
+        proj.steps[0].tags.push("cloud".to_string());
+        proj.steps[0].tags.push("security".to_string());
+
+        let results = proj.search_steps("aws");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, s1_id);
+
+        let tag_results = proj.search_steps("security");
+        assert_eq!(tag_results.len(), 1);
+        assert_eq!(tag_results[0].id, s1_id);
+
+        let empty_query = proj.search_steps("");
+        assert_eq!(empty_query.len(), 2);
+    }
 }

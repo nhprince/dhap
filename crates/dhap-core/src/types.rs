@@ -78,6 +78,34 @@ pub enum StepStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionKind {
+    Click,
+    Type,
+    Select,
+    Verify,
+    Navigate,
+    KeyShortcut,
+    Command,
+    Wait,
+    Custom(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CodeSnippet {
+    pub language: String,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChecklistItem {
+    pub id: String,
+    pub text: String,
+    #[serde(default)]
+    pub completed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GuideStep {
     pub id: StepId,
     pub order: u32,
@@ -88,6 +116,14 @@ pub struct GuideStep {
     pub frame_ids: Vec<FrameId>,
     pub source_timestamp_ms: Option<u64>,
     pub status: StepStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_kind: Option<ActionKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_snippet: Option<CodeSnippet>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checklist: Vec<ChecklistItem>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -219,6 +255,10 @@ impl Project {
             frame_ids,
             source_timestamp_ms: timestamp_ms,
             status: StepStatus::Draft,
+            action_kind: None,
+            code_snippet: None,
+            checklist: Vec::new(),
+            tags: Vec::new(),
         });
 
         self.updated_at = Utc::now();
@@ -282,4 +322,188 @@ impl Project {
 
         self.reorder_step(step_id, pos + 1)
     }
+
+    /// Search steps matching title, instruction, notes or tags
+    pub fn search_steps(&self, query: &str) -> Vec<&GuideStep> {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return self.steps.iter().collect();
+        }
+
+        self.steps
+            .iter()
+            .filter(|s| {
+                s.title.to_lowercase().contains(&q)
+                    || s.instruction.to_lowercase().contains(&q)
+                    || s.expected_result
+                        .as_deref()
+                        .map(|er| er.to_lowercase().contains(&q))
+                        .unwrap_or(false)
+                    || s.notes
+                        .as_deref()
+                        .map(|n| n.to_lowercase().contains(&q))
+                        .unwrap_or(false)
+                    || s.tags.iter().any(|t| t.to_lowercase().contains(&q))
+            })
+            .collect()
+    }
+
+    /// Calculates total duration spanned across source timestamps
+    pub fn total_duration_ms(&self) -> u64 {
+        let mut max_ts = 0u64;
+        for s in &self.steps {
+            if let Some(ts) = s.source_timestamp_ms {
+                if ts > max_ts {
+                    max_ts = ts;
+                }
+            }
+        }
+        for f in &self.frames {
+            if f.timestamp_ms > max_ts {
+                max_ts = f.timestamp_ms;
+            }
+        }
+        for src in &self.sources {
+            if src.duration_ms > max_ts {
+                max_ts = src.duration_ms;
+            }
+        }
+        max_ts
+    }
+
+    /// Computes rich analytics and project statistics
+    pub fn statistics(&self) -> ProjectStatistics {
+        let total_words: usize = self
+            .steps
+            .iter()
+            .map(|s| {
+                s.title.split_whitespace().count()
+                    + s.instruction.split_whitespace().count()
+                    + s.expected_result
+                        .as_deref()
+                        .map(|er| er.split_whitespace().count())
+                        .unwrap_or(0)
+                    + s.notes
+                        .as_deref()
+                        .map(|n| n.split_whitespace().count())
+                        .unwrap_or(0)
+            })
+            .sum();
+
+        let annotation_count: usize = self.frames.iter().map(|f| f.annotations.len()).sum();
+        let redaction_count: usize = self.frames.iter().map(|f| f.redactions.len()).sum();
+
+        // Average reading speed: 200 words per minute + 30 seconds per screenshot/step
+        let reading_time_from_words = (total_words as f64) / 200.0;
+        let reading_time_from_steps = (self.steps.len() as f64) * 0.5;
+        let estimated_reading_time_mins =
+            (reading_time_from_words + reading_time_from_steps).ceil() as usize;
+
+        ProjectStatistics {
+            step_count: self.steps.len(),
+            frame_count: self.frames.len(),
+            annotation_count,
+            redaction_count,
+            total_words,
+            estimated_reading_time_mins: estimated_reading_time_mins.max(1),
+            total_duration_ms: self.total_duration_ms(),
+        }
+    }
+
+    /// Compares this project against another project, generating a structured diff
+    pub fn compute_diff(&self, other: &Project) -> ProjectDiff {
+        let mut added_steps = Vec::new();
+        let mut removed_steps = Vec::new();
+        let mut modified_steps = Vec::new();
+
+        for other_step in &other.steps {
+            if !self.steps.iter().any(|s| s.id == other_step.id) {
+                added_steps.push(other_step.clone());
+            }
+        }
+
+        for this_step in &self.steps {
+            match other.steps.iter().find(|s| s.id == this_step.id) {
+                None => {
+                    removed_steps.push(this_step.clone());
+                }
+                Some(matching) => {
+                    let title_changed = this_step.title != matching.title;
+                    let instruction_changed = this_step.instruction != matching.instruction;
+                    let frame_changed = this_step.frame_ids != matching.frame_ids;
+
+                    if title_changed || instruction_changed || frame_changed {
+                        modified_steps.push(StepDiff {
+                            step_id: this_step.id.clone(),
+                            title_before: Some(this_step.title.clone()),
+                            title_after: Some(matching.title.clone()),
+                            instruction_changed,
+                            frame_changed,
+                            change_type: StepChangeType::Modified,
+                        });
+                    }
+                }
+            }
+        }
+
+        let summary = format!(
+            "Diff summary: +{} added, -{} removed, ~{} modified steps",
+            added_steps.len(),
+            removed_steps.len(),
+            modified_steps.len()
+        );
+
+        ProjectDiff {
+            base_project_id: self.id.clone(),
+            target_project_id: other.id.clone(),
+            added_steps,
+            removed_steps,
+            modified_steps,
+            total_steps_before: self.steps.len(),
+            total_steps_after: other.steps.len(),
+            summary,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectStatistics {
+    pub step_count: usize,
+    pub frame_count: usize,
+    pub annotation_count: usize,
+    pub redaction_count: usize,
+    pub total_words: usize,
+    pub estimated_reading_time_mins: usize,
+    pub total_duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum StepChangeType {
+    Added,
+    Removed,
+    Modified,
+    Unchanged,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StepDiff {
+    pub step_id: StepId,
+    pub title_before: Option<String>,
+    pub title_after: Option<String>,
+    pub instruction_changed: bool,
+    pub frame_changed: bool,
+    pub change_type: StepChangeType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProjectDiff {
+    pub base_project_id: ProjectId,
+    pub target_project_id: ProjectId,
+    pub added_steps: Vec<GuideStep>,
+    pub removed_steps: Vec<GuideStep>,
+    pub modified_steps: Vec<StepDiff>,
+    pub total_steps_before: usize,
+    pub total_steps_after: usize,
+    pub summary: String,
 }

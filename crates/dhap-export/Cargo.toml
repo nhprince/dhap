@@ -11,13 +11,14 @@ description = "Markdown and standalone responsive HTML documentation generators 
 [dependencies]
 dhap-core = { workspace = true }
 dhap-annotation = { workspace = true }
+dhap-media = { workspace = true }
 image = { workspace = true }
 pulldown-cmark = { workspace = true }
 tempfile = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 dhap-project = { workspace = true }
-dhap-media = { workspace = true }
